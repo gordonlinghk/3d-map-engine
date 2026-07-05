@@ -40,6 +40,7 @@ export function buildTreesGroup(world: MapWorld): THREE.Group {
   trunks.instanceMatrix.needsUpdate = true;
   canopies.instanceMatrix.needsUpdate = true;
   if (canopies.instanceColor) canopies.instanceColor.needsUpdate = true;
+  canopies.castShadow = true;
 
   group.add(trunks, canopies);
   return group;

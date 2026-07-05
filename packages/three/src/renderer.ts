@@ -7,6 +7,8 @@ import { buildRoadsMesh } from './roadMesh';
 import { buildBuildingsGroup, type BuildingsBuildResult } from './buildingsMesh';
 import { buildTreesGroup } from './treesMesh';
 import { buildLandmarksGroup } from './landmarksGroup';
+import { buildStreetLights, type StreetLightsResult } from './streetLights';
+import { buildStars } from './sky';
 import { createSimulationLayer, type SimulationLayer } from './simulation';
 import { createEmitter } from './events';
 import { createCameraRig } from './cameraRig';
@@ -87,6 +89,8 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -101,7 +105,22 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
   const hemi = new THREE.HemisphereLight(0xffffff, 0x687a8c, 0.9);
   const sun = new THREE.DirectionalLight(0xffffff, 1.6);
   sun.position.set(400, 600, 200);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0006;
+  sun.shadow.normalBias = 1.5;
   scene.add(hemi, sun);
+
+  const configureShadowCamera = (half: number): void => {
+    const cam = sun.shadow.camera;
+    cam.left = -half * 1.3;
+    cam.right = half * 1.3;
+    cam.top = half * 1.3;
+    cam.bottom = -half * 1.3;
+    cam.near = 10;
+    cam.far = 4000;
+    cam.updateProjectionMatrix();
+  };
 
   const emitter = createEmitter<MapEngineEvents>();
   const rig = createCameraRig(camera, renderer.domElement);
@@ -118,6 +137,9 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
   let buildingsResult: BuildingsBuildResult | null = null;
   let landmarksGroup: THREE.Group | null = null;
   let simulation: SimulationLayer | null = null;
+  let streetLights: StreetLightsResult | null = null;
+  let waterMesh: THREE.Mesh | null = null;
+  let stars: THREE.Points | null = null;
   let pickables = new Map<string, PickableInfo>();
   let highlights: Highlights | null = null;
   let hoveredId: string | null = null;
@@ -182,6 +204,9 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       }
     }
     buildingsResult?.setNightMode(mode === 'night');
+    streetLights?.setNightMode(mode === 'night');
+    if (stars) stars.visible = mode === 'night';
+    (landmarksGroup?.userData.setNight as ((v: boolean) => void) | undefined)?.(mode === 'night');
   };
   applyEnvironment('day');
 
@@ -287,6 +312,8 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
 
     highlights?.tick(now / 1000);
     simulation?.update(dt);
+    (waterMesh?.userData.tick as ((t: number) => void) | undefined)?.(now / 1000);
+    (landmarksGroup?.userData.tick as ((t: number) => void) | undefined)?.(now / 1000);
     for (const cb of frameCallbacks) cb(dt);
     renderer.render(scene, camera);
   };
@@ -326,6 +353,9 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       landmarksGroup = buildLandmarksGroup(world);
       simulation?.dispose();
       simulation = createSimulationLayer(world);
+      streetLights = buildStreetLights(world);
+      waterMesh = water;
+      stars = buildStars(world);
 
       layerGroups.set('terrain', terrain);
       layerGroups.set('water', water);
@@ -342,7 +372,10 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
         trees,
         landmarksGroup,
         simulation.group,
+        streetLights.group,
+        stars,
       );
+      configureShadowCamera((world.config.chunksX * world.config.chunkSize) / 2);
       scene.add(worldRoot);
 
       pickables = buildPickableIndex(world, landmarksGroup);

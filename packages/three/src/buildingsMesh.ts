@@ -94,6 +94,20 @@ export function buildBuildingsGroup(world: MapWorld): BuildingsBuildResult {
   const nightTextures: THREE.Texture[] = [];
   const sideMaterials: THREE.MeshLambertMaterial[] = [];
 
+  // Rooftop details: setback penthouse caps on high-rises, antennas on towers.
+  // Deterministic per building (keyed on floors + index), no RNG needed.
+  const caps: Array<{ b: BuildingInfo; w: number; d: number }> = [];
+  const antennas: Array<{ b: BuildingInfo; h: number }> = [];
+  for (const b of buildings) {
+    const fp = b.footprint;
+    const w = Math.abs(fp[1]!.x - fp[0]!.x);
+    const d = Math.abs(fp[2]!.y - fp[1]!.y);
+    if (b.floors >= 9 && (b.floors + fp.length) % 3 !== 0) caps.push({ b, w, d });
+    if (b.floors >= 22 && b.floors % 2 === 0) {
+      antennas.push({ b, h: 6 + (b.floors % 7) * 1.5 });
+    }
+  }
+
   CLASSES.forEach((cls, ci) => {
     const items = byClass[ci]!;
     if (items.length === 0) return;
@@ -128,10 +142,55 @@ export function buildBuildingsGroup(world: MapWorld): BuildingsBuildResult {
     });
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.castShadow = true;
 
     instanceIndex.set(mesh, ids);
     group.add(mesh);
   });
+
+  if (caps.length > 0) {
+    const capGeo = new THREE.BoxGeometry(1, 1, 1);
+    capGeo.translate(0, 0.5, 0);
+    const capMesh = new THREE.InstancedMesh(
+      capGeo,
+      new THREE.MeshLambertMaterial({ color: '#6e737c' }),
+      caps.length,
+    );
+    capMesh.name = 'buildings:caps';
+    caps.forEach(({ b, w, d }, i) => {
+      const capH = 2.2 + (b.floors % 3);
+      matrix.compose(
+        new THREE.Vector3(b.position.x, b.position.y + b.height - 0.6, b.position.z),
+        quat,
+        new THREE.Vector3(w * 0.55, capH, d * 0.55),
+      );
+      capMesh.setMatrixAt(i, matrix);
+    });
+    capMesh.instanceMatrix.needsUpdate = true;
+    capMesh.castShadow = true;
+    group.add(capMesh);
+  }
+
+  if (antennas.length > 0) {
+    const antGeo = new THREE.CylinderGeometry(0.25, 0.45, 1, 5);
+    antGeo.translate(0, 0.5, 0);
+    const antMesh = new THREE.InstancedMesh(
+      antGeo,
+      new THREE.MeshLambertMaterial({ color: '#9aa0a8' }),
+      antennas.length,
+    );
+    antMesh.name = 'buildings:antennas';
+    antennas.forEach(({ b, h }, i) => {
+      matrix.compose(
+        new THREE.Vector3(b.position.x, b.position.y + b.height, b.position.z),
+        quat,
+        new THREE.Vector3(1, h, 1),
+      );
+      antMesh.setMatrixAt(i, matrix);
+    });
+    antMesh.instanceMatrix.needsUpdate = true;
+    group.add(antMesh);
+  }
 
   const setNightMode = (night: boolean): void => {
     CLASSES.forEach((cls, ci) => {

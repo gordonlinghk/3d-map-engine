@@ -76,5 +76,6 @@ export function buildRoadsMesh(world: MapWorld): THREE.Mesh {
   const material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'roads';
+  mesh.receiveShadow = true;
   return mesh;
 }

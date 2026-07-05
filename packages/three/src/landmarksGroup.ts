@@ -94,6 +94,18 @@ function buildTvTower(): THREE.Group {
   const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.9, 26, 6), mat(RED));
   antenna.position.y = h + 13;
   g.add(antenna);
+  // Aviation warning beacon — blinks at night (see group tick).
+  const beacon = new THREE.Mesh(
+    new THREE.SphereGeometry(1.4, 8, 6),
+    new THREE.MeshLambertMaterial({
+      color: '#5c1610',
+      emissive: new THREE.Color('#ff2e1f'),
+      emissiveIntensity: 0,
+    }),
+  );
+  beacon.position.y = h + 27;
+  beacon.name = 'beacon';
+  g.add(beacon);
   return g;
 }
 
@@ -213,8 +225,31 @@ export function buildLandmarksGroup(world: MapWorld): THREE.Group {
     mesh.userData.objectId = lm.id;
     mesh.traverse((o) => {
       o.userData.objectId = lm.id;
+      if (o instanceof THREE.Mesh) o.castShadow = true;
     });
     group.add(mesh);
   }
+
+  // Night treatment: red landmark structures glow softly; beacons blink.
+  const redMats: THREE.MeshLambertMaterial[] = [];
+  const beaconMats: THREE.MeshLambertMaterial[] = [];
+  group.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const m = o.material as THREE.MeshLambertMaterial;
+    if (o.name === 'beacon') beaconMats.push(m);
+    else if (m.color?.getHexString() === new THREE.Color(RED).getHexString()) redMats.push(m);
+  });
+  let night = false;
+  group.userData.setNight = (v: boolean): void => {
+    night = v;
+    for (const m of redMats) m.emissiveIntensity = v ? 1 : 0;
+    for (const m of redMats) m.emissive.set(v ? '#4a1109' : '#000000');
+    if (!v) for (const m of beaconMats) m.emissiveIntensity = 0;
+  };
+  group.userData.tick = (time: number): void => {
+    if (!night || beaconMats.length === 0) return;
+    const on = Math.sin(time * 2.2) > 0.4 ? 2.2 : 0.08;
+    for (const m of beaconMats) m.emissiveIntensity = on;
+  };
   return group;
 }
