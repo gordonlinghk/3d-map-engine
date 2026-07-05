@@ -55,7 +55,16 @@ export function App() {
     const container = containerRef.current;
     if (!container) return;
 
-    const renderer = createThreeMapRenderer({ container });
+    // Headless automation (CI, screenshots) defaults to the cheap path so the
+    // main thread stays responsive; override with ?q=high|low.
+    const qParam = new URLSearchParams(window.location.search).get('q');
+    const quality =
+      qParam === 'high' || qParam === 'low'
+        ? qParam
+        : navigator.webdriver
+          ? 'low'
+          : 'high';
+    const renderer = createThreeMapRenderer({ container, quality });
     renderer.on('world:loaded', () => {
       // Let a couple of frames render behind the overlay before revealing.
       setTimeout(() => setReady(true), 250);

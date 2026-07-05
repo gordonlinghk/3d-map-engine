@@ -34,6 +34,12 @@ export type MapEngineEvents = {
 
 export type ThreeMapRendererOptions = {
   container: HTMLElement;
+  /**
+   * 'high' (default): shadows + full pixel ratio.
+   * 'low': no shadow mapping, pixel ratio 1 — for weak GPUs and headless
+   * automation, where the shadow pass makes the main thread unresponsive.
+   */
+  quality?: 'high' | 'low';
 };
 
 export interface ThreeMapRenderer {
@@ -84,12 +90,12 @@ function disposeObject(root: THREE.Object3D): void {
 }
 
 export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeMapRenderer {
-  const { container } = options;
+  const { container, quality = 'high' } = options;
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(quality === 'low' ? 1 : Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = quality !== 'low';
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 

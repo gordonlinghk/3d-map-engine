@@ -26,6 +26,12 @@ export type MapEngineEvents = {
 };
 export type ThreeMapRendererOptions = {
     container: HTMLElement;
+    /**
+     * 'high' (default): shadows + full pixel ratio.
+     * 'low': no shadow mapping, pixel ratio 1 — for weak GPUs and headless
+     * automation, where the shadow pass makes the main thread unresponsive.
+     */
+    quality?: 'high' | 'low';
 };
 export interface ThreeMapRenderer {
     readonly scene: THREE.Scene;
