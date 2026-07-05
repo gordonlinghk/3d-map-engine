@@ -4,6 +4,9 @@ import type { MapLayerId, MapWorld } from '@map-engine/core';
 import { buildTerrainGroup } from './terrainMesh';
 import { buildWaterMesh } from './waterMesh';
 import { buildRoadsMesh } from './roadMesh';
+import { buildBuildingsGroup, type BuildingsBuildResult } from './buildingsMesh';
+import { buildTreesGroup } from './treesMesh';
+import { buildLandmarksGroup } from './landmarksGroup';
 
 export type CameraMode = 'orbit' | 'fly' | 'walk';
 export type EnvironmentMode = 'day' | 'golden-hour' | 'night';
@@ -65,6 +68,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
   let worldRoot: THREE.Group | null = null;
   let currentWorld: MapWorld | null = null;
   let cameraMode: CameraMode = 'orbit';
+  let buildingsResult: BuildingsBuildResult | null = null;
 
   const applyEnvironment = (mode: EnvironmentMode): void => {
     // Full day/golden-hour/night treatment lands in Phase 7; default is day.
@@ -128,10 +132,16 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       const terrain = buildTerrainGroup(world);
       const water = buildWaterMesh(world);
       const roads = buildRoadsMesh(world);
+      buildingsResult = buildBuildingsGroup(world);
+      const trees = buildTreesGroup(world);
+      const landmarks = buildLandmarksGroup(world);
       layerGroups.set('terrain', terrain);
       layerGroups.set('water', water);
       layerGroups.set('roads', roads);
-      worldRoot.add(terrain, water, roads);
+      layerGroups.set('buildings', buildingsResult.group);
+      layerGroups.set('trees', trees);
+      layerGroups.set('landmarks', landmarks);
+      worldRoot.add(terrain, water, roads, buildingsResult.group, trees, landmarks);
       scene.add(worldRoot);
       homeView();
     },

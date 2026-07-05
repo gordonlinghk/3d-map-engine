@@ -12,7 +12,7 @@ export const MAP_PRESETS: Record<MapPresetId, MapConfig> = {
     ...BASE,
     preset: 'coastal-tech-city',
     terrain: { maxHeight: 60, hilliness: 0.45, islandFactor: 0.55 },
-    city: { blockSize: 40, buildingDensity: 0.55, maxFloors: 40 },
+    city: { blockSize: 40, buildingDensity: 0.66, maxFloors: 40 },
   },
   'island-city': {
     ...BASE,

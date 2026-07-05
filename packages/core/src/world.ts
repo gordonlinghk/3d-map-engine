@@ -1,6 +1,7 @@
 import { createHeightSampler, type HeightSampler } from './terrain';
 import { generateRoadGraph } from './roads';
-import type { ChunkCoord, MapChunk, MapConfig, MapWorld } from './types';
+import { generateCity } from './city';
+import type { ChunkCoord, MapChunk, MapConfig, MapObject, MapWorld, Vec3 } from './types';
 import { chunkKey } from './types';
 
 export const CHUNK_RESOLUTION = 32;
@@ -34,15 +35,40 @@ export function generateWorld(seed: string, config: MapConfig): MapWorld {
       chunks[chunkKey(coord)] = buildChunk(sampler, config, coord);
     }
   }
+
+  const city = generateCity(seed, config, sampler);
+  const objects: Record<string, MapObject> = {};
+  const halfX = (config.chunksX * config.chunkSize) / 2;
+  const halfZ = (config.chunksZ * config.chunkSize) / 2;
+  const chunkFor = (p: Vec3): MapChunk | undefined => {
+    const cx = Math.floor((p.x + halfX) / config.chunkSize);
+    const cz = Math.floor((p.z + halfZ) / config.chunkSize);
+    return chunks[chunkKey({ cx, cz })];
+  };
+  const register = (obj: MapObject, position: Vec3): void => {
+    objects[obj.id] = obj;
+    chunkFor(position)?.objectIds.push(obj.id);
+  };
+
+  for (const b of city.buildings) {
+    register({ objectType: 'building', id: b.id, building: b }, b.position);
+  }
+  for (const lm of city.landmarks) {
+    register({ objectType: 'landmark', id: lm.id, landmark: lm }, lm.position);
+  }
+  for (const t of city.trees) {
+    register({ objectType: 'tree', id: t.id, name: t.name, position: t.position, tags: t.tags }, t.position);
+  }
+
   return {
     id: `world:${seed}:${config.preset}`,
     seed,
     config: structuredClone(config),
     chunks,
-    objects: {},
-    districts: [],
+    objects,
+    districts: city.districts,
     roadGraph: generateRoadGraph(seed, config, sampler),
-    landmarks: [],
+    landmarks: city.landmarks,
   };
 }
 

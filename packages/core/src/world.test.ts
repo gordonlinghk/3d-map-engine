@@ -68,6 +68,45 @@ describe('generateWorld', () => {
     }
   });
 
+  it('generates a city with buildings, landmarks, districts and trees', () => {
+    const config = getPresetConfig('coastal-tech-city');
+    const world = generateWorld('city-check', config);
+    const objects = Object.values(world.objects);
+    const buildings = objects.filter((o) => o.objectType === 'building');
+    const trees = objects.filter((o) => o.objectType === 'tree');
+    expect(buildings.length).toBeGreaterThan(1200);
+    expect(buildings.length).toBeLessThan(4000);
+    expect(trees.length).toBeGreaterThan(100);
+    expect(world.landmarks.length).toBeGreaterThanOrEqual(5);
+    expect(world.districts.length).toBeGreaterThanOrEqual(4);
+    // Real companies got assigned to towers.
+    const named = buildings.filter(
+      (b) => b.objectType === 'building' && b.building.metadata?.company !== undefined,
+    );
+    expect(named.length).toBeGreaterThan(20);
+  });
+
+  it('every interactive object has stable id, name, position and type', () => {
+    const config = getPresetConfig('coastal-tech-city');
+    const world = generateWorld('id-check', config);
+    for (const obj of Object.values(world.objects)) {
+      expect(obj.id).toBeTruthy();
+      if (obj.objectType === 'building') {
+        expect(obj.building.name).toBeTruthy();
+        expect(obj.building.position).toBeDefined();
+        expect(obj.building.type).toBeTruthy();
+        expect(obj.building.floors).toBeGreaterThan(0);
+      } else if (obj.objectType === 'landmark') {
+        expect(obj.landmark.name).toBeTruthy();
+        expect(obj.landmark.position).toBeDefined();
+      }
+    }
+    // Chunk object assignment covers every object exactly once.
+    const assigned = Object.values(world.chunks).flatMap((c) => c.objectIds);
+    expect(assigned.length).toBe(Object.keys(world.objects).length);
+    expect(new Set(assigned).size).toBe(assigned.length);
+  });
+
   it('worlds survive serialization round-trip', () => {
     const config = getPresetConfig('island-city');
     const world = generateWorld('roundtrip', config);

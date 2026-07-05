@@ -5,6 +5,8 @@ export { serializeMap, deserializeMap } from './serialize';
 export { MAP_PRESETS, getPresetConfig } from './presets';
 export { createHeightSampler, type HeightSampler } from './terrain';
 export { generateRoadGraph } from './roads';
+export { generateCity, type CityData, type TreeObject } from './city';
+export { COMPANIES, type CompanyInfo, type CompanyCategory } from './companies';
 export {
   generateWorld,
   generateChunk,

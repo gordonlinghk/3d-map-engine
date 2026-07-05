@@ -3,6 +3,12 @@ import type { MapConfig, RoadEdge, RoadGraph, RoadNode } from './types';
 
 const LAND_MARGIN = 0.6;
 
+/** Number of grid steps from the center to the edge of the city street grid. */
+export function cityGridExtent(config: MapConfig): number {
+  const half = (config.chunksX * config.chunkSize) / 2;
+  return Math.floor((half * 0.72) / config.city.blockSize);
+}
+
 /**
  * Road network = downtown street grid + two highways crossing the whole map.
  * Highway segments over water become bridges. Everything is derived from the
@@ -29,7 +35,7 @@ export function generateRoadGraph(
   };
 
   // --- Street grid over the central city zone -------------------------------
-  const gridExtent = Math.floor((half * 0.62) / spacing);
+  const gridExtent = cityGridExtent(config);
   const gx = (i: number) => i * spacing;
 
   for (let i = -gridExtent; i <= gridExtent; i++) {
