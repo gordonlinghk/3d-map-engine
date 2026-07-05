@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "jsx": "react-jsx",
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "outDir": "dist-types"
+  },
+  "include": ["src", "vite.config.ts"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../three" },
+    { "path": "../ui" }
+  ]
+}

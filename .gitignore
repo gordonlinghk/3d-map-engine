@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+*.local
+.DS_Store
+*.log
+.vite/
+# planning zip stays local
+3D Map Engine Plan.zip
