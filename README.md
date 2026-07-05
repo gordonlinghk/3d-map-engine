@@ -4,6 +4,8 @@ A reusable, deterministic **procedural 3D city map engine** for the web — Thre
 
 **Live demo:** https://gordonlinghk.github.io/3d-map-engine/
 
+**Docs:** [開發者技術手冊 (HTML)](https://gordonlinghk.github.io/3d-map-engine/developer-guide.html) · [AI Agent 交接文檔 (Markdown)](3d-map-engine-development-guide.md)
+
 ## Quick start
 
 ```bash
