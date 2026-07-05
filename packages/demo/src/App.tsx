@@ -1,52 +1,39 @@
 import { useEffect, useRef, useState } from 'react';
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { generateWorld, getPresetConfig } from '@map-engine/core';
+import type { MapPresetId } from '@map-engine/core';
+import { createThreeMapRenderer } from '@map-engine/three';
+
+const DEFAULT_SEED = 'sf-atlas-001';
+const DEFAULT_PRESET: MapPresetId = 'coastal-tech-city';
+const PRESETS: MapPresetId[] = ['coastal-tech-city', 'island-city', 'downtown-night-grid'];
+
+function readUrlParams(): { seed: string; preset: MapPresetId } {
+  const params = new URLSearchParams(window.location.search);
+  const preset = params.get('preset') as MapPresetId | null;
+  return {
+    seed: params.get('seed') ?? DEFAULT_SEED,
+    preset: preset && PRESETS.includes(preset) ? preset : DEFAULT_PRESET,
+  };
+}
 
 export function App() {
-  const canvasRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [fps, setFps] = useState(0);
 
   useEffect(() => {
-    const container = canvasRef.current;
+    const container = containerRef.current;
     if (!container) return;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    container.appendChild(renderer.domElement);
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0b0e14);
-    scene.fog = new THREE.Fog(0x0b0e14, 200, 900);
-
-    const camera = new THREE.PerspectiveCamera(
-      55,
-      container.clientWidth / container.clientHeight,
-      0.1,
-      2000,
-    );
-    camera.position.set(120, 90, 120);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.target.set(0, 0, 0);
-
-    const grid = new THREE.GridHelper(1000, 100, 0x2a3350, 0x1a2036);
-    scene.add(grid);
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-    sun.position.set(100, 200, 50);
-    scene.add(sun);
+    const renderer = createThreeMapRenderer({ container });
+    const { seed, preset } = readUrlParams();
+    const world = generateWorld(seed, getPresetConfig(preset));
+    void renderer.loadWorld(world);
+    // Debug/testing handle (used by Playwright specs and dev tooling).
+    (window as unknown as Record<string, unknown>).__mapEngine = { renderer, world };
 
     let frames = 0;
     let lastFpsAt = performance.now();
-    let rafId = 0;
-
-    const loop = () => {
-      rafId = requestAnimationFrame(loop);
-      controls.update();
-      renderer.render(scene, camera);
+    const offFrame = renderer.onFrame(() => {
       frames += 1;
       const now = performance.now();
       if (now - lastFpsAt >= 500) {
@@ -54,28 +41,17 @@ export function App() {
         frames = 0;
         lastFpsAt = now;
       }
-    };
-    loop();
-
-    const onResize = () => {
-      camera.aspect = container.clientWidth / container.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(container.clientWidth, container.clientHeight);
-    };
-    window.addEventListener('resize', onResize);
+    });
 
     return () => {
-      cancelAnimationFrame(rafId);
-      window.removeEventListener('resize', onResize);
-      controls.dispose();
+      offFrame();
       renderer.dispose();
-      container.removeChild(renderer.domElement);
     };
   }, []);
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <div ref={canvasRef} style={{ width: '100%', height: '100%' }} />
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
       <div
         data-testid="fps"
         style={{
