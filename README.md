@@ -30,6 +30,15 @@ Toggle ✏️ in the toolbar: click a building to rename it, change floors, rota
 
 Building footprints, heights, road networks, parks and water are fetched live from the Overpass API and converted into a `MapWorld` by [`@map-engine/osm`](packages/osm) — real polygon buildings are extruded into a single merged mesh with per-face picking, named buildings are searchable, and cars drive the real streets. Data © OpenStreetMap contributors (ODbL). v1 limitations: flat terrain (no elevation), no multipolygon relations, coastal sea not reconstructed.
 
+**Bake big areas offline 🍞** — live fetching is capped at a ~1.3×1.8 km window (public-Overpass etiquette + load time). For larger areas, pre-bake a world file:
+
+```bash
+pnpm bake --city "Hong Kong" --size 3          # 3×3 km, tiled + rate-limited fetch
+pnpm bake --center 22.2818,114.1583 --size 4   # or an explicit centre / --bbox s,w,n,e
+```
+
+The CLI splits the box into ~1.2 km tiles, fetches them sequentially with delays and retry/backoff, merges + dedupes, and writes a serialized `MapWorld` JSON (3×3 km Hong Kong ≈ 3,150 buildings, 7 MB, boots in ~1 s). Load it in the demo via `?world=<url>` (e.g. copy into `packages/demo/public/cities/`), or in your own app with `deserializeMap()` + `loadWorld()`. The tiled fetcher is also exported as `fetchOsmAreaTiled()` for programmatic baking. Sizes above 8 km are refused without `--force` — both the public Overpass server and a single-mesh renderer have limits; truly city-scale worlds need streaming/LOD (future work).
+
 ### Prompt-to-map ✨
 
 Open the 🌍 World panel and describe a city in natural language (English or Chinese) — e.g. *"a mountainous island city at night with dense skyscrapers"* / *「黃昏的海灣城市,有大橋和密集高樓」*. Two modes:

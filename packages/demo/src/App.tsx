@@ -154,7 +154,9 @@ export function App() {
     let disposed = false;
     const boot = async (): Promise<void> => {
       const { seed, preset, directives, environment } = readUrlParams();
-      const city = resolveCityFromUrl(new URLSearchParams(window.location.search));
+      const params = new URLSearchParams(window.location.search);
+      const city = resolveCityFromUrl(params);
+      const worldUrl = params.get('world');
       const pendingDraft = takePendingDraft(window.location.search);
 
       let world: MapWorld;
@@ -170,6 +172,27 @@ export function App() {
         world = generateWorld(pendingDraft.base.seed, applyDirectives(d).config);
         base = pendingDraft.base;
         if (d.environment) env = d.environment;
+      } else if (worldUrl) {
+        // Pre-baked world file (see `pnpm bake`) — a full serialized MapWorld.
+        setLoadingText('Loading baked world…');
+        try {
+          const response = await fetch(worldUrl);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = (await response.json()) as Parameters<typeof deserializeMap>[0];
+          if (disposed) return;
+          world = deserializeMap(data);
+          base = {
+            kind: 'imported',
+            sourceSlug: `url:${worldUrl}`,
+            sourceName: world.id.replace(/^osm:/, ''),
+            snapshot: serializeMap(world),
+          };
+        } catch (err) {
+          console.error(`Baked world "${worldUrl}" failed to load, falling back to procedural`, err);
+          setLoadingText('Baked world unavailable — generating a procedural city…');
+          world = generateWorld(seed, applyDirectives({ ...directives, preset }).config);
+          base = { kind: 'procedural', seed, directives: { ...directives, preset } };
+        }
       } else if (city) {
         setLoadingText(`Fetching ${city.name} from OpenStreetMap…`);
         try {
@@ -297,6 +320,9 @@ export function App() {
           // Geocoded (searched) city — the URL carries the box itself.
           url.searchParams.set('bbox', draft.base.sourceSlug.slice(5));
           url.searchParams.set('cityName', draft.base.sourceName);
+        } else if (draft.base.sourceSlug.startsWith('url:')) {
+          // Pre-baked world file.
+          url.searchParams.set('world', draft.base.sourceSlug.slice(4));
         } else {
           url.searchParams.set('city', draft.base.sourceSlug);
         }

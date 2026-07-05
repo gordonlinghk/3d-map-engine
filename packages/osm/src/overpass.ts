@@ -24,7 +24,13 @@ export async function fetchOsmArea(
 ): Promise<OsmResponse> {
   const response = await fetch(options.endpoint ?? DEFAULT_ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      // Overpass rejects UA-less requests (HTTP 406) — Node's fetch sends no
+      // User-Agent by default; browsers ignore this header (forbidden) and
+      // send their own.
+      'User-Agent': '3d-map-engine (github.com/gordonlinghk/3d-map-engine)',
+    },
     body: `data=${encodeURIComponent(buildOverpassQuery(bbox))}`,
   });
   if (!response.ok) {

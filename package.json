@@ -18,14 +18,18 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "lint": "eslint packages/*/src",
-    "typecheck": "tsc -b packages/core packages/osm packages/three packages/ui packages/demo"
+    "typecheck": "tsc -b packages/core packages/osm packages/three packages/ui packages/demo",
+    "bake": "tsx scripts/bake-city.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",
+    "@map-engine/core": "workspace:*",
+    "@map-engine/osm": "workspace:*",
     "@playwright/test": "^1.55.0",
     "@types/node": "^24.0.0",
     "eslint": "^9.30.0",
     "tsup": "^8.5.1",
+    "tsx": "^4.23.0",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.35.0",
     "vitest": "^3.2.0"

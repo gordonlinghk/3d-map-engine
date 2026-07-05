@@ -9,3 +9,5 @@ test-results/
 .vite/
 # planning zip stays local
 3D Map Engine Plan.zip
+baked/
+packages/demo/public/cities/
