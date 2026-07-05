@@ -47,24 +47,34 @@ test('minimap: clicking a spot flies the camera there', async ({ page, viewport 
     return { x: camera.position.x, z: camera.position.z };
   });
 
-  // Click near the top-left of the minimap → north-west of the world.
+  // Click near the top-left of the minimap → north-west of the world
+  // (0.2 of the map ≈ world coordinate −0.6·half on both axes).
   const canvas = page.getByTestId('minimap').locator('canvas');
   const box = (await canvas.boundingBox())!;
   await canvas.click({ position: { x: box.width * 0.2, y: box.height * 0.2 } });
-  await page.waitForTimeout(2000); // fly animation
+
+  // The fly tween is dt-driven with dt clamped to 0.1 s — under CI's
+  // software rendering (~4 FPS) the 1.1 s animation takes several wall
+  // seconds, so poll for arrival instead of waiting a fixed time.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const eng = (window as any).__mapEngine;
+          const { camera } = eng.renderer;
+          const half = (eng.world.config.chunksX * eng.world.config.chunkSize) / 2;
+          const target = -0.6 * half;
+          return Math.hypot(camera.position.x - target, camera.position.z - target) / half;
+        }),
+      { timeout: 30_000 },
+    )
+    .toBeLessThan(0.45);
 
   const after = await page.evaluate(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const eng = (window as any).__mapEngine;
-    const { camera } = eng.renderer;
-    const half = (eng.world.config.chunksX * eng.world.config.chunkSize) / 2;
-    return { x: camera.position.x, z: camera.position.z, half };
+    const { camera } = (window as any).__mapEngine.renderer;
+    return { x: camera.position.x, z: camera.position.z };
   });
-
-  // The camera moved, and toward the north-west quadrant target
-  // (0.2 of the map ≈ world coordinate −0.6·half on both axes).
-  const moved = Math.hypot(after.x - before.x, after.z - before.z);
-  expect(moved).toBeGreaterThan(50);
-  const target = -0.6 * after.half;
-  expect(Math.hypot(after.x - target, after.z - target)).toBeLessThan(after.half * 0.45);
+  expect(Math.hypot(after.x - before.x, after.z - before.z)).toBeGreaterThan(50);
 });
