@@ -19,6 +19,9 @@ export type ToolbarProps = {
   /** Prompt-to-map: describe a city in natural language. */
   onPromptGenerate?: (prompt: string, apiKey: string) => Promise<void>;
   initialApiKey?: string;
+  /** Real-world cities (OSM imports). */
+  cityOptions?: Array<{ slug: string; name: string }>;
+  onLoadCity?: (slug: string) => void;
 };
 
 const PRESET_OPTIONS = [
@@ -34,6 +37,8 @@ export function Toolbar({
   onGenerate,
   onPromptGenerate,
   initialApiKey,
+  cityOptions,
+  onLoadCity,
 }: ToolbarProps) {
   const { renderer, world } = useAtlas();
   const [worldOpen, setWorldOpen] = useState(false);
@@ -203,6 +208,34 @@ export function Toolbar({
           >
             Generate world
           </button>
+
+          {onLoadCity && cityOptions && cityOptions.length > 0 && (
+            <>
+              <div style={{ borderTop: '1px solid rgba(0,0,0,0.08)', margin: '4px -14px 0' }} />
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>
+                  🗺 REAL CITY (OpenStreetMap)
+                </span>
+                <select
+                  data-testid="city-select"
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) onLoadCity(e.target.value);
+                  }}
+                  style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)' }}
+                >
+                  <option value="" disabled>
+                    Load a real city…
+                  </option>
+                  {cityOptions.map((c) => (
+                    <option key={c.slug} value={c.slug}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
 
           {onPromptGenerate && (
             <>

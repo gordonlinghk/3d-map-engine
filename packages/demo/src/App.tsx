@@ -4,6 +4,7 @@ import type { EnvironmentDirective, MapDirectives, MapPresetId, MapWorld } from 
 import { createThreeMapRenderer, createTour } from '@map-engine/three';
 import type { ThreeMapRenderer, Tour } from '@map-engine/three';
 import { AtlasUI, useAtlasStore } from '@map-engine/ui';
+import { CITY_PRESETS, fetchOsmArea, osmToWorld } from '@map-engine/osm';
 import { getStoredApiKey, promptToDirectives, storeApiKey } from './promptToMap';
 
 const DEFAULT_SEED = 'sf-atlas-001';
@@ -47,6 +48,7 @@ export function App() {
   const tourRef = useRef<Tour | null>(null);
   const [tourActive, setTourActive] = useState(false);
   const [ready, setReady] = useState(false);
+  const [loadingText, setLoadingText] = useState('Generating a procedural city…');
   const [engine, setEngine] = useState<{ renderer: ThreeMapRenderer; world: MapWorld } | null>(
     null,
   );
@@ -69,19 +71,44 @@ export function App() {
       // Let a couple of frames render behind the overlay before revealing.
       setTimeout(() => setReady(true), 250);
     });
-    const { seed, preset, directives, environment } = readUrlParams();
-    const { config } = applyDirectives({ ...directives, preset });
-    const world = generateWorld(seed, config);
-    void renderer.loadWorld(world);
-    renderer.setEnvironment(environment);
-    useAtlasStore.getState().setEnvironment(environment);
-    const tour = createTour(renderer, world);
-    tourRef.current = tour;
-    (window as unknown as Record<string, unknown>).__mapEngine = { renderer, world, tour };
-    setEngine({ renderer, world });
+
+    let disposed = false;
+    const boot = async (): Promise<void> => {
+      const { seed, preset, directives, environment } = readUrlParams();
+      const citySlug = new URLSearchParams(window.location.search).get('city');
+      const city = citySlug ? CITY_PRESETS[citySlug] : undefined;
+
+      let world: MapWorld;
+      if (city) {
+        setLoadingText(`Fetching ${city.name} from OpenStreetMap…`);
+        try {
+          const osm = await fetchOsmArea(city.bbox);
+          if (disposed) return;
+          setLoadingText(`Building ${city.name}…`);
+          world = osmToWorld(osm, { name: city.name, bbox: city.bbox });
+        } catch (err) {
+          console.error('OSM load failed, falling back to procedural city', err);
+          setLoadingText('OpenStreetMap unavailable — generating a procedural city…');
+          world = generateWorld(seed, applyDirectives({ ...directives, preset }).config);
+        }
+      } else {
+        world = generateWorld(seed, applyDirectives({ ...directives, preset }).config);
+      }
+      if (disposed) return;
+
+      void renderer.loadWorld(world);
+      renderer.setEnvironment(environment);
+      useAtlasStore.getState().setEnvironment(environment);
+      const tour = createTour(renderer, world);
+      tourRef.current = tour;
+      (window as unknown as Record<string, unknown>).__mapEngine = { renderer, world, tour };
+      setEngine({ renderer, world });
+    };
+    void boot();
 
     return () => {
-      tour.stop();
+      disposed = true;
+      tourRef.current?.stop();
       renderer.dispose();
       setEngine(null);
     };
@@ -99,9 +126,16 @@ export function App() {
     const url = new URL(window.location.href);
     url.searchParams.set('seed', seed);
     url.searchParams.set('preset', preset);
-    // Manual preset/seed selection drops prompt-derived overrides.
+    // Manual preset/seed selection drops prompt/city-derived overrides.
     url.searchParams.delete('cfg');
     url.searchParams.delete('env');
+    url.searchParams.delete('city');
+    window.location.href = url.toString();
+  };
+
+  const loadCity = (slug: string): void => {
+    const url = new URL(window.location.origin + window.location.pathname);
+    url.searchParams.set('city', slug);
     window.location.href = url.toString();
   };
 
@@ -140,6 +174,8 @@ export function App() {
           world={engine.world}
           onReset={reset}
           onGenerate={generate}
+          onLoadCity={loadCity}
+          cityOptions={Object.values(CITY_PRESETS).map((c) => ({ slug: c.slug, name: c.name }))}
           onPromptGenerate={generateFromPrompt}
           initialApiKey={getStoredApiKey()}
           onTourToggle={toggleTour}
@@ -164,7 +200,9 @@ export function App() {
           }}
         >
           <div style={{ fontSize: 26, fontWeight: 800 }}>3D Map Engine</div>
-          <div style={{ opacity: 0.65, fontSize: 14 }}>Generating a procedural city…</div>
+          <div data-testid="loading-text" style={{ opacity: 0.65, fontSize: 14 }}>
+            {loadingText}
+          </div>
           <div
             style={{
               width: 160,

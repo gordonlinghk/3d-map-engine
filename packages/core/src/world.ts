@@ -81,7 +81,39 @@ export function generateChunk(world: MapWorld, coord: ChunkCoord): MapChunk {
   return buildChunk(createHeightSampler(world.seed, world.config), world.config, coord);
 }
 
-/** Reusable exact height sampler for a world (terrain function, not mesh). */
+/**
+ * Height sampler for a world. Samples the chunk height grids (bilinear), so
+ * it matches the rendered terrain mesh exactly and also works for imported
+ * worlds (e.g. OSM) whose heights never came from the procedural function.
+ * Falls back to the procedural terrain function outside the chunk grid.
+ */
 export function createWorldHeightSampler(world: MapWorld): HeightSampler {
-  return createHeightSampler(world.seed, world.config);
+  const { chunkSize, chunksX, chunksZ } = world.config;
+  const halfX = (chunksX * chunkSize) / 2;
+  const halfZ = (chunksZ * chunkSize) / 2;
+  let fallback: HeightSampler | null = null;
+
+  return (x: number, z: number): number => {
+    const cx = Math.floor((x + halfX) / chunkSize);
+    const cz = Math.floor((z + halfZ) / chunkSize);
+    const chunk = world.chunks[chunkKey({ cx, cz })];
+    if (!chunk) {
+      fallback ??= createHeightSampler(world.seed, world.config);
+      return fallback(x, z);
+    }
+    const res = chunk.resolution;
+    const step = chunkSize / res;
+    const lx = (x + halfX - cx * chunkSize) / step;
+    const lz = (z + halfZ - cz * chunkSize) / step;
+    const i = Math.min(Math.floor(lx), res - 1);
+    const j = Math.min(Math.floor(lz), res - 1);
+    const tx = lx - i;
+    const tz = lz - j;
+    const row = res + 1;
+    const h00 = chunk.heights[j * row + i]!;
+    const h10 = chunk.heights[j * row + i + 1]!;
+    const h01 = chunk.heights[(j + 1) * row + i]!;
+    const h11 = chunk.heights[(j + 1) * row + i + 1]!;
+    return h00 * (1 - tx) * (1 - tz) + h10 * tx * (1 - tz) + h01 * (1 - tx) * tz + h11 * tx * tz;
+  };
 }

@@ -7,6 +7,13 @@ export type BuildingsBuildResult = {
     group: THREE.Group;
     /** instanced mesh -> building ids by instanceId (for picking). */
     instanceIndex: Map<THREE.InstancedMesh, string[]>;
+    /** Merged extruded mesh for polygon footprints (OSM); picking via faceRanges. */
+    polyMesh: THREE.Mesh | null;
     setNightMode: (night: boolean) => void;
+};
+export type FaceRange = {
+    start: number;
+    end: number;
+    id: string;
 };
 export declare function buildBuildingsGroup(world: MapWorld): BuildingsBuildResult;

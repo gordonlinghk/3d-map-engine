@@ -7,5 +7,11 @@ export type ToolbarProps = {
     /** Prompt-to-map: describe a city in natural language. */
     onPromptGenerate?: (prompt: string, apiKey: string) => Promise<void>;
     initialApiKey?: string;
+    /** Real-world cities (OSM imports). */
+    cityOptions?: Array<{
+        slug: string;
+        name: string;
+    }>;
+    onLoadCity?: (slug: string) => void;
 };
-export declare function Toolbar({ onTourToggle, tourActive, onReset, onGenerate, onPromptGenerate, initialApiKey, }: ToolbarProps): import("react").JSX.Element;
+export declare function Toolbar({ onTourToggle, tourActive, onReset, onGenerate, onPromptGenerate, initialApiKey, cityOptions, onLoadCity, }: ToolbarProps): import("react").JSX.Element;

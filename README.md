@@ -16,6 +16,10 @@ pnpm build        # production build of the demo
 
 Demo URL parameters: `?seed=<any-string>&preset=coastal-tech-city|island-city|downtown-night-grid&env=day|golden-hour|night&cfg=<base64url MapDirectives>`
 
+### Real cities (OpenStreetMap) 🗺
+
+Pick a real city in the 🌍 World panel (or `?city=tokyo-shibuya|hong-kong-central|manhattan-midtown|london-city`). Building footprints, heights, road networks, parks and water are fetched live from the Overpass API and converted into a `MapWorld` by [`@map-engine/osm`](packages/osm) — real polygon buildings are extruded into a single merged mesh with per-face picking, named buildings are searchable, and cars drive the real streets. Data © OpenStreetMap contributors (ODbL). v1 limitations: flat terrain (no elevation), no multipolygon relations, coastal sea not reconstructed.
+
 ### Prompt-to-map ✨
 
 Open the 🌍 World panel and describe a city in natural language (English or Chinese) — e.g. *"a mountainous island city at night with dense skyscrapers"* / *「黃昏的海灣城市,有大橋和密集高樓」*. Two modes:

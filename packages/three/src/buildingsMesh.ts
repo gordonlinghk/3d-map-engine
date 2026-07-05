@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { BuildingInfo, MapWorld } from '@map-engine/core';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import type { BuildingInfo, MapWorld, Vec2 } from '@map-engine/core';
 
 /**
  * Buildings render as instanced boxes in four height classes; each class
@@ -71,8 +72,77 @@ export type BuildingsBuildResult = {
   group: THREE.Group;
   /** instanced mesh -> building ids by instanceId (for picking). */
   instanceIndex: Map<THREE.InstancedMesh, string[]>;
+  /** Merged extruded mesh for polygon footprints (OSM); picking via faceRanges. */
+  polyMesh: THREE.Mesh | null;
   setNightMode: (night: boolean) => void;
 };
+
+export type FaceRange = { start: number; end: number; id: string };
+
+/** Procedural buildings have axis-aligned rectangular footprints. */
+function isAxisAlignedRect(fp: Vec2[]): boolean {
+  if (fp.length !== 4) return false;
+  const [a, b, c, d] = fp as [Vec2, Vec2, Vec2, Vec2];
+  return (
+    (a.y === b.y && b.x === c.x && c.y === d.y && d.x === a.x) ||
+    (a.x === b.x && b.y === c.y && c.x === d.x && d.y === a.y)
+  );
+}
+
+const POLY_TINTS: Record<string, string[]> = {
+  company: ['#cfd4da', '#c2cad4', '#dadee3', '#b8c4d0', '#d6d2c8'],
+  residential: ['#e0d6c4', '#d9cbb4', '#e6dfd0', '#d3c6ae'],
+  public: ['#d8d0bd', '#cec8b8'],
+  transport: ['#c4c8ce', '#b9bec6'],
+  landmark: ['#d6d2c8'],
+};
+
+/** One merged extruded geometry for all polygon-footprint buildings. */
+function buildPolygonBuildings(buildings: BuildingInfo[]): {
+  mesh: THREE.Mesh;
+  material: THREE.MeshLambertMaterial;
+} | null {
+  if (buildings.length === 0) return null;
+  const geometries: THREE.BufferGeometry[] = [];
+  const ranges: FaceRange[] = [];
+  const color = new THREE.Color();
+  let faceOffset = 0;
+
+  buildings.forEach((b, idx) => {
+    const shape = new THREE.Shape(b.footprint.map((p) => new THREE.Vector2(p.x, -p.y)));
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: b.height, bevelEnabled: false });
+    geo.rotateX(-Math.PI / 2); // extrusion depth becomes +Y, shape y becomes -Z
+    geo.translate(0, b.position.y - 0.3, 0);
+    geo.deleteAttribute('uv');
+
+    const tints = POLY_TINTS[b.type] ?? POLY_TINTS.company!;
+    color.set(tints[(b.floors * 5 + idx) % tints.length]!);
+    const count = geo.attributes.position!.count;
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const faces = count / 3; // ExtrudeGeometry is non-indexed
+    ranges.push({ start: faceOffset, end: faceOffset + faces, id: b.id });
+    faceOffset += faces;
+    geometries.push(geo);
+  });
+
+  const merged = mergeGeometries(geometries, false);
+  for (const g of geometries) g.dispose();
+  if (!merged) return null;
+  merged.computeVertexNormals();
+  const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const mesh = new THREE.Mesh(merged, material);
+  mesh.name = 'buildings:poly';
+  mesh.castShadow = true;
+  mesh.userData.faceRanges = ranges;
+  return { mesh, material };
+}
 
 export function buildBuildingsGroup(world: MapWorld): BuildingsBuildResult {
   const group = new THREE.Group();
@@ -80,9 +150,15 @@ export function buildBuildingsGroup(world: MapWorld): BuildingsBuildResult {
   const instanceIndex = new Map<THREE.InstancedMesh, string[]>();
 
   const buildings: BuildingInfo[] = [];
+  const polygonBuildings: BuildingInfo[] = [];
   for (const obj of Object.values(world.objects)) {
-    if (obj.objectType === 'building') buildings.push(obj.building);
+    if (obj.objectType !== 'building') continue;
+    if (isAxisAlignedRect(obj.building.footprint)) buildings.push(obj.building);
+    else polygonBuildings.push(obj.building);
   }
+
+  const poly = buildPolygonBuildings(polygonBuildings);
+  if (poly) group.add(poly.mesh);
 
   const byClass: BuildingInfo[][] = CLASSES.map(() => []);
   for (const b of buildings) byClass[classFor(b)]!.push(b);
@@ -193,6 +269,13 @@ export function buildBuildingsGroup(world: MapWorld): BuildingsBuildResult {
   }
 
   const setNightMode = (night: boolean): void => {
+    if (poly) {
+      // No per-window texture on merged polygon buildings — a soft warm
+      // emissive keeps imported cities alive at night.
+      poly.material.emissive.set(night ? '#332b18' : '#000000');
+      poly.material.emissiveIntensity = night ? 0.55 : 0;
+      poly.material.needsUpdate = true;
+    }
     CLASSES.forEach((cls, ci) => {
       const side = sideMaterials[ci];
       if (!side) return;
@@ -208,5 +291,5 @@ export function buildBuildingsGroup(world: MapWorld): BuildingsBuildResult {
     });
   };
 
-  return { group, instanceIndex, setNightMode };
+  return { group, instanceIndex, polyMesh: poly?.mesh ?? null, setNightMode };
 }

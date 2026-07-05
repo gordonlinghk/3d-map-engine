@@ -18,7 +18,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "lint": "eslint packages/*/src",
-    "typecheck": "tsc -b packages/core packages/three packages/ui packages/demo"
+    "typecheck": "tsc -b packages/core packages/osm packages/three packages/ui packages/demo"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",

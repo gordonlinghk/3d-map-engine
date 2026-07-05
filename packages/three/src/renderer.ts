@@ -8,6 +8,7 @@ import { buildBuildingsGroup, type BuildingsBuildResult } from './buildingsMesh'
 import { buildTreesGroup } from './treesMesh';
 import { buildLandmarksGroup } from './landmarksGroup';
 import { buildStreetLights, type StreetLightsResult } from './streetLights';
+import { buildFlatAreas } from './flatAreas';
 import { buildStars } from './sky';
 import { createSimulationLayer, type SimulationLayer } from './simulation';
 import { createEmitter } from './events';
@@ -353,6 +354,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       worldRoot.name = 'world';
 
       const terrain = buildTerrainGroup(world);
+      terrain.add(buildFlatAreas(world));
       const water = buildWaterMesh(world);
       const roads = buildRoadsMesh(world);
       buildingsResult = buildBuildingsGroup(world);

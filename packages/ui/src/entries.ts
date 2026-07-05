@@ -40,6 +40,17 @@ export function buildAtlasEntries(world: MapWorld): AtlasEntry[] {
         tags: b.tags,
         unicorn: false,
       });
+    } else if (b.metadata?.imported && b.tags.includes('Named')) {
+      // Named real-world buildings (OSM imports).
+      entries.push({
+        id: b.id,
+        name: b.name,
+        kind: 'building',
+        category: b.category ?? 'Building',
+        description: b.description,
+        tags: b.tags,
+        unicorn: false,
+      });
     }
   }
 
@@ -89,7 +100,9 @@ export type CategoryChip = (typeof CATEGORY_CHIPS)[number];
 export function filterEntries(entries: AtlasEntry[], chip: CategoryChip): AtlasEntry[] {
   switch (chip) {
     case 'All':
-      return entries.filter((e) => e.kind === 'company' || e.kind === 'landmark');
+      return entries.filter(
+        (e) => e.kind === 'company' || e.kind === 'landmark' || e.kind === 'building',
+      );
     case 'Landmarks':
       return entries.filter((e) => e.kind === 'landmark');
     case 'Unicorns':

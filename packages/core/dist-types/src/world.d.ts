@@ -12,5 +12,10 @@ export declare function generateWorld(seed: string, config: MapConfig): MapWorld
  * coord) — never on which chunks were generated before it.
  */
 export declare function generateChunk(world: MapWorld, coord: ChunkCoord): MapChunk;
-/** Reusable exact height sampler for a world (terrain function, not mesh). */
+/**
+ * Height sampler for a world. Samples the chunk height grids (bilinear), so
+ * it matches the rendered terrain mesh exactly and also works for imported
+ * worlds (e.g. OSM) whose heights never came from the procedural function.
+ * Falls back to the procedural terrain function outside the chunk grid.
+ */
 export declare function createWorldHeightSampler(world: MapWorld): HeightSampler;

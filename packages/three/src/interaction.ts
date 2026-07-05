@@ -28,9 +28,19 @@ export function buildPickableIndex(
   for (const obj of Object.values(world.objects)) {
     if (obj.objectType === 'building') {
       const b = obj.building;
-      const fp = b.footprint;
-      const w = Math.abs(fp[1]!.x - fp[0]!.x);
-      const d = Math.abs(fp[2]!.y - fp[1]!.y);
+      // Bounds over the whole footprint (works for arbitrary polygons too).
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const p of b.footprint) {
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y);
+        maxY = Math.max(maxY, p.y);
+      }
+      const w = maxX - minX;
+      const d = maxY - minY;
       index.set(b.id, {
         id: b.id,
         type: 'building',
@@ -214,6 +224,34 @@ export function createPicker(
               point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
               distance: hit.distance,
             };
+          }
+        }
+      }
+      // Merged polygon buildings (imported worlds): resolve id via face ranges.
+      if (buildings.polyMesh) {
+        const hit = raycaster.intersectObject(buildings.polyMesh, false)[0];
+        const ranges = buildings.polyMesh.userData.faceRanges as
+          | Array<{ start: number; end: number; id: string }>
+          | undefined;
+        const face = hit?.faceIndex ?? null;
+        if (hit && face !== null && ranges && (!best || hit.distance < best.distance)) {
+          // Binary search the face range containing this triangle.
+          let lo = 0;
+          let hi = ranges.length - 1;
+          while (lo <= hi) {
+            const mid = (lo + hi) >> 1;
+            const r = ranges[mid]!;
+            if (face < r.start) hi = mid - 1;
+            else if (face >= r.end) lo = mid + 1;
+            else {
+              best = {
+                objectId: r.id,
+                objectType: 'building',
+                point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
+                distance: hit.distance,
+              };
+              break;
+            }
           }
         }
       }

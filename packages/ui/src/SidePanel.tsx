@@ -29,8 +29,10 @@ export function SidePanel() {
     );
   }
 
-  const atlasName =
-    world.config.preset === 'coastal-tech-city'
+  const isImported = world.id.startsWith('osm:');
+  const atlasName = isImported
+    ? (world.districts[0]?.name ?? 'Imported City')
+    : world.config.preset === 'coastal-tech-city'
       ? 'SF Tech Atlas'
       : world.config.preset === 'island-city'
         ? 'Island Atlas'
@@ -49,7 +51,9 @@ export function SidePanel() {
         <div>
           <div className="title">{atlasName}</div>
           <div className="subtitle">
-            {companies.length} companies · {landmarks.length} landmarks · 1 city
+            {isImported
+              ? `${entries.filter((e) => e.kind === 'building').length} named buildings · OpenStreetMap`
+              : `${companies.length} companies · ${landmarks.length} landmarks · 1 city`}
           </div>
         </div>
         <button
@@ -113,7 +117,9 @@ export function SidePanel() {
       </div>
 
       <div className="atlas-side-footer">
-        {list.length} shown · Three.js · procedural seed “{world.seed}”
+        {isImported
+          ? `${list.length} shown · data © OpenStreetMap contributors`
+          : `${list.length} shown · Three.js · procedural seed “${world.seed}”`}
       </div>
     </aside>
   );

@@ -152,6 +152,10 @@ export type MapWorld = {
   blocks: CityBlock[];
   roadGraph: RoadGraph;
   landmarks: LandmarkInfo[];
+  /** Flat water areas (world XZ polygons) — used by imported real-world maps. */
+  waterPolygons?: Vec2[][];
+  /** Flat green areas (world XZ polygons) — used by imported real-world maps. */
+  greenPolygons?: Vec2[][];
 };
 
 export const SERIALIZATION_VERSION = 1;

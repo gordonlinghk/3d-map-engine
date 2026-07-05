@@ -51,13 +51,18 @@ export function createColliderIndex(world: MapWorld): ColliderIndex {
 
   for (const obj of Object.values(world.objects)) {
     if (obj.objectType === 'building') {
-      const fp = obj.building.footprint;
-      add({
-        minX: Math.min(fp[0]!.x, fp[2]!.x),
-        maxX: Math.max(fp[0]!.x, fp[2]!.x),
-        minZ: Math.min(fp[0]!.y, fp[2]!.y),
-        maxZ: Math.max(fp[0]!.y, fp[2]!.y),
-      });
+      // AABB over the whole footprint (handles arbitrary polygons).
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minZ = Infinity;
+      let maxZ = -Infinity;
+      for (const p of obj.building.footprint) {
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x);
+        minZ = Math.min(minZ, p.y);
+        maxZ = Math.max(maxZ, p.y);
+      }
+      add({ minX, maxX, minZ, maxZ });
     }
   }
   // Solid landmark bases (bridges stay walkable-under; parks are open).
