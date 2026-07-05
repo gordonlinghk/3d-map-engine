@@ -29,7 +29,7 @@ export function makeFacadeTexture(
   canvas.height = 128;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = options.night ? '#1b2027' : '#ffffff';
+  ctx.fillStyle = options.night ? '#0e1117' : '#ffffff';
   ctx.fillRect(0, 0, 64, 128);
 
   const cellW = 64 / cols;
@@ -45,8 +45,8 @@ export function makeFacadeTexture(
   for (let f = 0; f < floors; f++) {
     for (let c = 0; c < cols; c++) {
       if (options.night) {
-        const lit = rand() < 0.55;
-        ctx.fillStyle = lit ? (rand() < 0.2 ? '#ffd489' : '#f6e3ac') : '#232a33';
+        const lit = rand() < 0.6;
+        ctx.fillStyle = lit ? (rand() < 0.25 ? '#ffc45e' : '#ffe9b0') : '#151a22';
       } else {
         ctx.fillStyle = 'rgba(45, 58, 74, 0.85)';
       }
@@ -144,7 +144,7 @@ export function buildBuildingsGroup(world: MapWorld): BuildingsBuildResult {
       // At night the facade texture carries its own emissive-looking windows.
       side.emissive = night ? new THREE.Color('#ffffff') : new THREE.Color('#000000');
       side.emissiveMap = night ? nightTextures[ci]! : null;
-      side.emissiveIntensity = night ? 0.85 : 0;
+      side.emissiveIntensity = night ? 1.15 : 0;
       side.needsUpdate = true;
     });
   };

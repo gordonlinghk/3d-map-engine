@@ -40,6 +40,23 @@ export interface ThreeMapRenderer {
         x: number;
         y: number;
     }): MapObjectHit | null;
+    /** Project a world position to canvas pixel coordinates. */
+    projectToScreen(pos: {
+        x: number;
+        y: number;
+        z: number;
+    }): {
+        x: number;
+        y: number;
+        visible: boolean;
+    };
+    /** Anchor point above an object, for floating labels. Null if unknown id. */
+    getObjectAnchor(objectId: string): {
+        x: number;
+        y: number;
+        z: number;
+    } | null;
+    getEnvironment(): EnvironmentMode;
     focusObject(objectId: string): Promise<void>;
     setSelected(objectId: string | null): void;
     getSelected(): string | null;

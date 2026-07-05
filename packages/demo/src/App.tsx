@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { generateWorld, getPresetConfig } from '@map-engine/core';
 import type { MapPresetId, MapWorld } from '@map-engine/core';
-import { createThreeMapRenderer } from '@map-engine/three';
-import type { ThreeMapRenderer } from '@map-engine/three';
+import { createThreeMapRenderer, createTour } from '@map-engine/three';
+import type { ThreeMapRenderer, Tour } from '@map-engine/three';
 import { AtlasUI } from '@map-engine/ui';
 
 const DEFAULT_SEED = 'sf-atlas-001';
@@ -20,6 +20,8 @@ function readUrlParams(): { seed: string; preset: MapPresetId } {
 
 export function App() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const tourRef = useRef<Tour | null>(null);
+  const [tourActive, setTourActive] = useState(false);
   const [engine, setEngine] = useState<{ renderer: ThreeMapRenderer; world: MapWorld } | null>(
     null,
   );
@@ -32,14 +34,25 @@ export function App() {
     const { seed, preset } = readUrlParams();
     const world = generateWorld(seed, getPresetConfig(preset));
     void renderer.loadWorld(world);
-    (window as unknown as Record<string, unknown>).__mapEngine = { renderer, world };
+    const tour = createTour(renderer, world);
+    tourRef.current = tour;
+    (window as unknown as Record<string, unknown>).__mapEngine = { renderer, world, tour };
     setEngine({ renderer, world });
 
     return () => {
+      tour.stop();
       renderer.dispose();
       setEngine(null);
     };
   }, []);
+
+  const toggleTour = (): void => {
+    const tour = tourRef.current;
+    if (!tour) return;
+    if (tour.isActive()) tour.stop();
+    else tour.start();
+    setTourActive(tour.isActive());
+  };
 
   const reset = (): void => {
     const { preset } = readUrlParams();
@@ -53,7 +66,15 @@ export function App() {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      {engine && <AtlasUI renderer={engine.renderer} world={engine.world} onReset={reset} />}
+      {engine && (
+        <AtlasUI
+          renderer={engine.renderer}
+          world={engine.world}
+          onReset={reset}
+          onTourToggle={toggleTour}
+          tourActive={tourActive}
+        />
+      )}
     </div>
   );
 }

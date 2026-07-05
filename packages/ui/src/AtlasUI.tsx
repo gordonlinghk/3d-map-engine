@@ -6,6 +6,7 @@ import { InfoPanel } from './InfoPanel';
 import { Toolbar, type ToolbarProps } from './Toolbar';
 import { MiniMap } from './MiniMap';
 import { Hud } from './Hud';
+import { SelectedLabel } from './SelectedLabel';
 import { useAtlasStore } from './store';
 import type { EngineContextValue } from './types';
 
@@ -26,6 +27,7 @@ export function AtlasUI({ renderer, world, ...toolbar }: AtlasUIProps) {
   return (
     <AtlasProvider renderer={renderer} world={world}>
       <div className="atlas-ui">
+        <SelectedLabel />
         <SidePanel />
         <SearchBar />
         <Toolbar {...toolbar} />

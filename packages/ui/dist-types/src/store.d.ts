@@ -1,5 +1,7 @@
+import type { MapLayerId } from '@map-engine/core';
 import type { CameraMode, EnvironmentMode } from './types';
 import type { CategoryChip } from './entries';
+export declare const TOGGLABLE_LAYERS: MapLayerId[];
 export type AtlasUiState = {
     selectedId: string | null;
     hoveredId: string | null;
@@ -8,6 +10,8 @@ export type AtlasUiState = {
     chip: CategoryChip;
     query: string;
     panelOpen: boolean;
+    labelsVisible: boolean;
+    layers: Record<MapLayerId, boolean>;
     setSelectedId(id: string | null): void;
     setHoveredId(id: string | null): void;
     setCameraMode(mode: CameraMode): void;
@@ -15,5 +19,7 @@ export type AtlasUiState = {
     setChip(chip: CategoryChip): void;
     setQuery(q: string): void;
     setPanelOpen(open: boolean): void;
+    setLabelsVisible(visible: boolean): void;
+    setLayer(layer: MapLayerId, visible: boolean): void;
 };
 export declare const useAtlasStore: import("zustand").UseBoundStore<import("zustand").StoreApi<AtlasUiState>>;

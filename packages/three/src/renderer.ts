@@ -43,6 +43,15 @@ export interface ThreeMapRenderer {
   setEnvironment(mode: EnvironmentMode): void;
   setLayerVisibility(layer: MapLayerId, visible: boolean): void;
   pickObject(pointer: { x: number; y: number }): MapObjectHit | null;
+  /** Project a world position to canvas pixel coordinates. */
+  projectToScreen(pos: { x: number; y: number; z: number }): {
+    x: number;
+    y: number;
+    visible: boolean;
+  };
+  /** Anchor point above an object, for floating labels. Null if unknown id. */
+  getObjectAnchor(objectId: string): { x: number; y: number; z: number } | null;
+  getEnvironment(): EnvironmentMode;
   focusObject(objectId: string): Promise<void>;
   setSelected(objectId: string | null): void;
   getSelected(): string | null;
@@ -118,13 +127,57 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
     terrain: layerGroups.get('terrain') ?? null,
   }));
 
+  let environment: EnvironmentMode = 'day';
   const applyEnvironment = (mode: EnvironmentMode): void => {
-    // Full golden-hour/night treatment lands in Phase 7.
-    if (mode === 'day') {
-      scene.background = new THREE.Color('#cfe3f5');
-      scene.fog = new THREE.Fog(0xcfe3f5, 800, 3600);
-      hemi.intensity = 0.9;
-      sun.intensity = 1.6;
+    environment = mode;
+    const water = layerGroups.get('water') as THREE.Mesh | undefined;
+    const waterMat = water?.material as THREE.MeshPhongMaterial | undefined;
+    switch (mode) {
+      case 'day': {
+        scene.background = new THREE.Color('#cfe3f5');
+        scene.fog = new THREE.Fog(0xcfe3f5, 800, 3600);
+        hemi.color.set('#ffffff');
+        hemi.groundColor.set('#687a8c');
+        hemi.intensity = 0.9;
+        sun.color.set('#ffffff');
+        sun.intensity = 1.6;
+        sun.position.set(400, 600, 200);
+        if (waterMat) {
+          waterMat.color.set('#2f66b8');
+          waterMat.specular.set('#9fc4ff');
+        }
+        break;
+      }
+      case 'golden-hour': {
+        scene.background = new THREE.Color('#ecc9a0');
+        scene.fog = new THREE.Fog(0xecc9a0, 450, 2600);
+        hemi.color.set('#ffe3c2');
+        hemi.groundColor.set('#8a7a68');
+        hemi.intensity = 0.65;
+        sun.color.set('#ffb36b');
+        sun.intensity = 1.9;
+        sun.position.set(700, 140, 350);
+        if (waterMat) {
+          waterMat.color.set('#40639c');
+          waterMat.specular.set('#ffca8f');
+        }
+        break;
+      }
+      case 'night': {
+        scene.background = new THREE.Color('#0d1120');
+        scene.fog = new THREE.Fog(0x0d1120, 500, 3000);
+        hemi.color.set('#8b9cc4');
+        hemi.groundColor.set('#1a2233');
+        hemi.intensity = 0.45;
+        sun.color.set('#aebcff');
+        sun.intensity = 0.35;
+        sun.position.set(-300, 500, -200);
+        if (waterMat) {
+          waterMat.color.set('#152847');
+          waterMat.specular.set('#4a6fa8');
+        }
+        break;
+      }
     }
     buildingsResult?.setNightMode(mode === 'night');
   };
@@ -281,6 +334,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       pickables = buildPickableIndex(world, landmarksGroup);
       highlights = createHighlights(scene);
       rig.setTerrain(createWorldHeightSampler(world), world.config.waterLevel);
+      applyEnvironment(environment);
       homeView();
       emitter.emit('world:loaded', { worldId: world.id });
     },
@@ -305,6 +359,23 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
     pickObject(pointer: { x: number; y: number }): MapObjectHit | null {
       return picker.pick(pointer.x, pointer.y);
     },
+
+    projectToScreen(pos: { x: number; y: number; z: number }) {
+      const v = new THREE.Vector3(pos.x, pos.y, pos.z).project(camera);
+      return {
+        x: ((v.x + 1) / 2) * container.clientWidth,
+        y: ((1 - v.y) / 2) * container.clientHeight,
+        visible: v.z < 1 && Math.abs(v.x) <= 1.15 && Math.abs(v.y) <= 1.15,
+      };
+    },
+
+    getObjectAnchor(objectId: string) {
+      const info = pickables.get(objectId);
+      if (!info) return null;
+      return { x: info.position.x, y: info.position.y + info.height + 8, z: info.position.z };
+    },
+
+    getEnvironment: () => environment,
 
     focusObject,
     setSelected,

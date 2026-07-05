@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useAtlas } from './context';
-import { useAtlasStore } from './store';
+import { TOGGLABLE_LAYERS, useAtlasStore } from './store';
 import type { CameraMode, EnvironmentMode } from './types';
 
 const ENV_ORDER: EnvironmentMode[] = ['day', 'golden-hour', 'night'];
@@ -22,6 +23,11 @@ export function Toolbar({ onTourToggle, tourActive, onReset }: ToolbarProps) {
   const environment = useAtlasStore((s) => s.environment);
   const setEnvironment = useAtlasStore((s) => s.setEnvironment);
   const selectedId = useAtlasStore((s) => s.selectedId);
+  const layers = useAtlasStore((s) => s.layers);
+  const setLayer = useAtlasStore((s) => s.setLayer);
+  const labelsVisible = useAtlasStore((s) => s.labelsVisible);
+  const setLabelsVisible = useAtlasStore((s) => s.setLabelsVisible);
+  const [layersOpen, setLayersOpen] = useState(false);
 
   const switchMode = (m: CameraMode): void => {
     renderer.setCameraMode(m);
@@ -89,7 +95,53 @@ export function Toolbar({ onTourToggle, tourActive, onReset }: ToolbarProps) {
         <button title="Home view" data-testid="home" onClick={() => renderer.goHome()}>
           ⌂
         </button>
+        <button
+          title="Layers"
+          data-testid="layers-toggle"
+          className={layersOpen ? 'active' : ''}
+          onClick={() => setLayersOpen((v) => !v)}
+        >
+          ▤
+        </button>
       </div>
+      {layersOpen && (
+        <div
+          data-testid="layers-panel"
+          style={{
+            background: 'var(--panel-bg)',
+            borderRadius: 12,
+            boxShadow: 'var(--shadow)',
+            padding: '10px 14px',
+            display: 'grid',
+            gap: 6,
+            fontSize: 13,
+          }}
+        >
+          {TOGGLABLE_LAYERS.map((layer) => (
+            <label key={layer} style={{ display: 'flex', gap: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                data-testid={`layer-${layer}`}
+                checked={layers[layer]}
+                onChange={(e) => {
+                  setLayer(layer, e.target.checked);
+                  renderer.setLayerVisibility(layer, e.target.checked);
+                }}
+              />
+              <span style={{ textTransform: 'capitalize' }}>{layer}</span>
+            </label>
+          ))}
+          <label style={{ display: 'flex', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              data-testid="layer-labels"
+              checked={labelsVisible}
+              onChange={(e) => setLabelsVisible(e.target.checked)}
+            />
+            <span>Labels</span>
+          </label>
+        </div>
+      )}
     </div>
   );
 }

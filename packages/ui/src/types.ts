@@ -15,6 +15,12 @@ export interface MapRendererLike {
   setEnvironment(mode: EnvironmentMode): void;
   setLayerVisibility(layer: MapLayerId, visible: boolean): void;
   focusObject(objectId: string): Promise<void>;
+  projectToScreen(pos: { x: number; y: number; z: number }): {
+    x: number;
+    y: number;
+    visible: boolean;
+  };
+  getObjectAnchor(objectId: string): { x: number; y: number; z: number } | null;
   setSelected(objectId: string | null): void;
   getSelected(): string | null;
   goHome(): void;
