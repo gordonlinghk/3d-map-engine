@@ -17,15 +17,24 @@ importers:
       '@map-engine/osm':
         specifier: workspace:*
         version: link:packages/osm
+      '@map-engine/terrain':
+        specifier: workspace:*
+        version: link:packages/terrain
       '@playwright/test':
         specifier: ^1.55.0
         version: 1.61.1
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.2
+      '@types/pngjs':
+        specifier: ^6.0.5
+        version: 6.0.5
       eslint:
         specifier: ^9.30.0
         version: 9.39.4
+      pngjs:
+        specifier: ^7.0.0
+        version: 7.0.0
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(postcss@8.5.16)(tsx@4.23.0)(typescript@5.9.3)
@@ -55,6 +64,9 @@ importers:
       '@map-engine/osm':
         specifier: workspace:*
         version: link:../osm
+      '@map-engine/terrain':
+        specifier: workspace:*
+        version: link:../terrain
       '@map-engine/three':
         specifier: workspace:*
         version: link:../three
@@ -91,6 +103,12 @@ importers:
         version: 7.3.6(@types/node@24.13.2)(tsx@4.23.0)
 
   packages/osm:
+    dependencies:
+      '@map-engine/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/terrain:
     dependencies:
       '@map-engine/core':
         specifier: workspace:*
@@ -800,6 +818,9 @@ packages:
   '@types/node@24.13.2':
     resolution: {integrity: sha512-fRa09kZTgu8o71KFcDjUFuc7F+dEbZYZmkI0mg5YBTRs0yMKjYHsq/c0urDKeDb+D5qVgXOdFcuu+DZPKOITwA==}
 
+  '@types/pngjs@6.0.5':
+    resolution: {integrity: sha512-0k5eKfrA83JOZPppLtS2C7OUtyNAl2wKNxfyYl9Q5g9lPkgBl/9hNyAu6HuEH2J4XmIv2znEpkDd0SaZVxW6iQ==}
+
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
     peerDependencies:
@@ -1381,6 +1402,10 @@ packages:
     resolution: {integrity: sha512-DWnY5o3YbLWK4GovuAVwpqL+1VwGNdUGrRr++8j8PtQQzvAVZUIMjKQ90fY689sEJZJBbZVw1rXaOKSTitkzPQ==}
     engines: {node: '>=18'}
     hasBin: true
+
+  pngjs@7.0.0:
+    resolution: {integrity: sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow==}
+    engines: {node: '>=14.19.0'}
 
   postcss-load-config@6.0.1:
     resolution: {integrity: sha512-oPtTM4oerL+UXmx+93ytZVN82RrlY/wPUV8IeDxFrzIjXOLF1pN+EmKPLbubvKHT2HC20xXsCAH2Z+CKV6Oz/g==}
@@ -2194,6 +2219,10 @@ snapshots:
     dependencies:
       undici-types: 7.18.2
 
+  '@types/pngjs@6.0.5':
+    dependencies:
+      '@types/node': 24.13.2
+
   '@types/react-dom@19.2.3(@types/react@19.2.17)':
     dependencies:
       '@types/react': 19.2.17
@@ -2821,6 +2850,8 @@ snapshots:
       playwright-core: 1.61.1
     optionalDependencies:
       fsevents: 2.3.2
+
+  pngjs@7.0.0: {}
 
   postcss-load-config@6.0.1(postcss@8.5.16)(tsx@4.23.0):
     dependencies:

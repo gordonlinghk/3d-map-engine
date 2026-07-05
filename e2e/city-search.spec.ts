@@ -78,6 +78,8 @@ test('city search: suggestions disambiguate same-name cities; selection loads th
   await page.route('**/overpass-api.de/**', (route) =>
     route.fulfill({ json: OVERPASS_FIXTURE, contentType: 'application/json' }),
   );
+  // No elevation in this test — the terrain fetch falls back to flat ground.
+  await page.route('**/elevation-tiles-prod/**', (route) => route.abort());
 
   await openWorldPanel(page);
 

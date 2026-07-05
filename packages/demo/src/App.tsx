@@ -32,6 +32,7 @@ import {
 } from '@map-engine/osm';
 import type { BBox, GeocodingProvider } from '@map-engine/osm';
 import { getStoredApiKey, promptToDirectives, storeApiKey } from './promptToMap';
+import { applyTerrainToWorld, fetchElevationGrid } from '@map-engine/terrain';
 import { saveDraftFile, stashPendingDraft, takePendingDraft } from './drafts';
 
 const DEFAULT_SEED = 'sf-atlas-001';
@@ -214,6 +215,18 @@ export function App() {
           if (disposed) return;
           setLoadingText(`Building ${city.name}…`);
           world = osmToWorld(osm, { name: city.name, bbox: city.bbox });
+          // Real elevation (AWS terrarium tiles) — opt out with ?flat=1.
+          if (!params.has('flat')) {
+            try {
+              setLoadingText(`Shaping ${city.name}'s terrain…`);
+              const grid = await fetchElevationGrid(city.bbox, { signal: bootAbort.signal });
+              if (disposed) return;
+              applyTerrainToWorld(world, grid.sample, { bbox: city.bbox });
+            } catch (err) {
+              if ((err as Error)?.name === 'AbortError' || disposed) return;
+              console.warn('Elevation unavailable — keeping flat ground', err);
+            }
+          }
           // Snapshot the pristine base (before edits) so drafts of imported
           // worlds are self-contained.
           base = {

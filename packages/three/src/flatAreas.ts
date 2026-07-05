@@ -18,12 +18,23 @@ export function buildFlatAreas(world: MapWorld): THREE.Group {
   const build = (polys: Vec2[][], color: string, lift: number, name: string): void => {
     if (polys.length === 0) return;
     const geometries: THREE.BufferGeometry[] = [];
+    const isWater = name === 'flat-water';
     for (const poly of polys) {
       const shape = new THREE.Shape(poly.map((p) => new THREE.Vector2(p.x, -p.y)));
       const geo = new THREE.ShapeGeometry(shape);
       geo.rotateX(-Math.PI / 2);
-      const c = poly[0]!;
-      geo.translate(0, Math.max(sample(c.x, c.y), world.config.waterLevel) + lift, 0);
+      // Water sits at the lowest ground under its outline (real terrain
+      // carves a flat bed there); greens at their average edge height —
+      // the least-bad plane on sloped ground.
+      let min = Infinity;
+      let sum = 0;
+      for (const p of poly) {
+        const h = sample(p.x, p.y);
+        min = Math.min(min, h);
+        sum += h;
+      }
+      const level = isWater ? min : sum / poly.length;
+      geo.translate(0, Math.max(level, world.config.waterLevel) + lift, 0);
       geometries.push(geo);
     }
     const material = new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });

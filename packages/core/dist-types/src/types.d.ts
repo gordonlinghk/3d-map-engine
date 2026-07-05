@@ -139,6 +139,8 @@ export type MapWorld = {
     waterPolygons?: Vec2[][];
     /** Flat green areas (world XZ polygons) — used by imported real-world maps. */
     greenPolygons?: Vec2[][];
+    /** Data-source attribution lines (licence obligations) — shown in the UI. */
+    attribution?: string[];
 };
 export declare const SERIALIZATION_VERSION = 1;
 export type SerializedMap = {

@@ -150,7 +150,7 @@ export function SidePanel() {
 
       <div className="atlas-side-footer">
         {isImported
-          ? `${list.length} shown · data © OpenStreetMap contributors`
+          ? [`${list.length} shown`, 'data © OpenStreetMap contributors', ...(world.attribution ?? [])].join(' · ')
           : `${list.length} shown · Three.js · procedural seed “${world.seed}”`}
       </div>
     </aside>

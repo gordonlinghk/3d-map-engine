@@ -28,7 +28,9 @@ Toggle ✏️ in the toolbar: click a building to rename it, change floors, rota
 
 **Search any city on Earth** in the 🌍 World panel: type a name (min 2 chars, debounced autocomplete via the keyless [Photon](https://photon.komoot.io) geocoder — or press 🔍/Enter), pick the right one from the disambiguated candidates (city · region · country, keyboard ↑↓ + Enter supported), and an extract centred on it is fetched and rendered. The **AREA selector** chooses the window size — 1× (~1.3 km, fast), 2× (~2.6 km, ~30 s) or 3× (~4 km, 1–2 min); larger areas fetch as sequential Overpass tiles with live progress (2× Paris ≈ 10,000 buildings). Curated quick picks remain (`?city=tokyo-shibuya|hong-kong-central|manhattan-midtown|london-city`); searched cities are shareable via `?bbox=s,w,n,e&cityName=…`. `?geo=mock` switches to an offline candidate dataset for development. The geocoder sits behind a `GeocodingProvider` interface (`createPhotonProvider` / `createMockGeocodingProvider` in `@map-engine/osm`), so keyed providers (Mapbox, Google Places…) can be plugged in without UI changes.
 
-Building footprints, heights, road networks, parks and water are fetched live from the Overpass API and converted into a `MapWorld` by [`@map-engine/osm`](packages/osm) — real polygon buildings are extruded into a single merged mesh with per-face picking, named buildings are searchable, and cars drive the real streets. Data © OpenStreetMap contributors (ODbL). v1 limitations: flat terrain (no elevation), no multipolygon relations, coastal sea not reconstructed.
+Building footprints, heights, road networks, parks and water are fetched live from the Overpass API and converted into a `MapWorld` by [`@map-engine/osm`](packages/osm) — real polygon buildings are extruded into a single merged mesh with per-face picking, named buildings are searchable, and cars drive the real streets. Data © OpenStreetMap contributors (ODbL).
+
+**Real elevation ⛰** — imported cities get true relief from [`@map-engine/terrain`](packages/terrain): terrarium DEM tiles (Mapzen/Tilezen on AWS Open Data — free, keyless) are decoded into the chunk height grids, buildings settle onto the hillsides, roads and traffic follow the slopes, lakes/rivers get a flat carved bed, and sea-level cells render as actual water — Hong Kong now rises 480 m to the Peak with Victoria Harbour around it. On by default for real-city loads and `pnpm bake`; opt out with `?flat=1` / `--flat`. Remaining limitations: no multipolygon relations.
 
 **Bake big areas offline 🍞** — live fetching is capped at a ~1.3×1.8 km window (public-Overpass etiquette + load time). For larger areas, pre-bake a world file:
 
@@ -70,6 +72,7 @@ Either way the result is a set of clamped `MapDirectives` (preset, environment, 
 | Package | Role | Dependencies |
 | --- | --- | --- |
 | `@map-engine/core` | Data model, seeded RNG, noise, terrain/road/city generation, serialization | none (no DOM, no Three.js) |
+| `@map-engine/terrain` | Real-world elevation: terrarium DEM tiles (AWS) → chunk height grids | core |
 | `@map-engine/three` | Three.js renderer adapter: meshes, camera rig, picking, highlights, environments, tour | three |
 | `@map-engine/ui` | React demo UI: search, list, info panel, toolbar, minimap, HUD | react, zustand, fuse.js |
 | `@map-engine/demo` | Vite app wiring everything together | all of the above |

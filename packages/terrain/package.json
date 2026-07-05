@@ -1,0 +1,39 @@
+{
+  "name": "@map-engine/terrain",
+  "version": "0.1.0",
+  "description": "Real-world elevation for @map-engine/core — fetch terrarium DEM tiles (AWS Terrain Tiles) and apply them to a MapWorld's chunk height grids.",
+  "license": "MIT",
+  "author": "Gordon Ling",
+  "homepage": "https://gordonlinghk.github.io/3d-map-engine/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gordonlinghk/3d-map-engine.git",
+    "directory": "packages/terrain"
+  },
+  "keywords": ["dem", "elevation", "terrarium", "terrain", "3d", "map"],
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": ["dist", "LICENSE", "README.md"],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "sideEffects": false,
+  "dependencies": {
+    "@map-engine/core": "workspace:*"
+  }
+}

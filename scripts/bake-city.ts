@@ -14,6 +14,7 @@
  *   --delay <ms>       pause between tile requests (default 1500)
  *   --name <name>      world display name
  *   --out <file>       output path (default baked/<slug>.map.json)
+ *   --flat             skip real elevation (terrain is fetched by default)
  *   --force            allow size > 8 km (be kind to the public Overpass server)
  *
  * The output loads in the demo via  ?world=<url-to-file>  (e.g. copy it to
@@ -30,6 +31,9 @@ import {
   parseBBoxSlug,
 } from '@map-engine/osm';
 import type { BBox } from '@map-engine/osm';
+import { applyTerrainToWorld, fetchElevationGrid } from '@map-engine/terrain';
+import type { DecodedPng } from '@map-engine/terrain';
+import { PNG } from 'pngjs';
 
 const KM_PER_DEG_LAT = 110.574;
 const KM_PER_DEG_LON_EQUATOR = 111.32;
@@ -106,6 +110,20 @@ async function main(): Promise<void> {
   console.log(`Fetched ${osm.elements.length.toLocaleString()} unique elements in ${Math.round((Date.now() - started) / 1000)}s; converting…`);
 
   const world = osmToWorld(osm, { name, bbox });
+
+  if (!has('flat')) {
+    console.log('Fetching elevation (AWS terrarium tiles)…');
+    const decodePng = (bytes: ArrayBuffer): Promise<DecodedPng> => {
+      const png = PNG.sync.read(Buffer.from(bytes));
+      return Promise.resolve({ width: png.width, height: png.height, data: png.data });
+    };
+    const grid = await fetchElevationGrid(bbox, { decodePng });
+    const stats = applyTerrainToWorld(world, grid.sample, { bbox });
+    console.log(
+      `  elevation ${stats.minElevation.toFixed(0)}–${stats.maxElevation.toFixed(0)} m · ${(stats.seaFraction * 100).toFixed(0)}% sea`,
+    );
+  }
+
   const buildings = Object.values(world.objects).filter((o) => o.objectType === 'building').length;
   const json = JSON.stringify(serializeMap(world));
 

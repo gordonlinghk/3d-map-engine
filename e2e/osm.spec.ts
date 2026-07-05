@@ -33,6 +33,8 @@ test('OSM city loads via mocked Overpass and is searchable', async ({ page }) =>
   await page.route('**/overpass-api.de/**', (route) =>
     route.fulfill({ json: FIXTURE, contentType: 'application/json' }),
   );
+  // No elevation in this test — the terrain fetch falls back to flat ground.
+  await page.route('**/elevation-tiles-prod/**', (route) => route.abort());
 
   await page.goto('/?city=tokyo-shibuya');
   await page.waitForFunction(
