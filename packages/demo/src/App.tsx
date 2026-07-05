@@ -21,7 +21,16 @@ import type {
 import { createBuildingEditor, createThreeMapRenderer, createTour } from '@map-engine/three';
 import type { BuildingEditor, ThreeMapRenderer, Tour } from '@map-engine/three';
 import { AtlasUI, useAtlasStore } from '@map-engine/ui';
-import { CITY_PRESETS, fetchOsmArea, osmToWorld } from '@map-engine/osm';
+import {
+  CITY_PRESETS,
+  candidateToCityArea,
+  createMockGeocodingProvider,
+  createPhotonProvider,
+  fetchOsmArea,
+  osmToWorld,
+  parseBBoxSlug,
+} from '@map-engine/osm';
+import type { BBox, GeocodingProvider } from '@map-engine/osm';
 import { getStoredApiKey, promptToDirectives, storeApiKey } from './promptToMap';
 import { saveDraftFile, stashPendingDraft, takePendingDraft } from './drafts';
 
@@ -51,6 +60,26 @@ function saveOverlay(worldId: string, overlay: EditOverlay): void {
   } catch {
     // Storage full/unavailable — edits stay in-memory for this session.
   }
+}
+
+/**
+ * Which real-city area (if any) the current URL points at: a curated preset
+ * (`?city=slug`) or a geocoded search result (`?bbox=s,w,n,e&cityName=…`).
+ */
+function resolveCityFromUrl(
+  params: URLSearchParams,
+): { slug: string; name: string; bbox: BBox } | undefined {
+  const slug = params.get('city');
+  if (slug && CITY_PRESETS[slug]) return CITY_PRESETS[slug];
+  const bboxRaw = params.get('bbox');
+  if (bboxRaw) {
+    const bbox = parseBBoxSlug(bboxRaw);
+    if (bbox) {
+      return { slug: `bbox:${bbox.join(',')}`, name: params.get('cityName') ?? 'Custom area', bbox };
+    }
+    console.warn('Ignoring invalid ?bbox=', bboxRaw);
+  }
+  return undefined;
 }
 
 function decodeCfg(raw: string | null): MapDirectives {
@@ -125,8 +154,7 @@ export function App() {
     let disposed = false;
     const boot = async (): Promise<void> => {
       const { seed, preset, directives, environment } = readUrlParams();
-      const citySlug = new URLSearchParams(window.location.search).get('city');
-      const city = citySlug ? CITY_PRESETS[citySlug] : undefined;
+      const city = resolveCityFromUrl(new URLSearchParams(window.location.search));
       const pendingDraft = takePendingDraft(window.location.search);
 
       let world: MapWorld;
@@ -265,7 +293,13 @@ export function App() {
       // (and the localStorage autosave key, which includes cfg) line up.
       const url = new URL(window.location.origin + window.location.pathname);
       if (draft.base.kind === 'imported') {
-        url.searchParams.set('city', draft.base.sourceSlug);
+        if (draft.base.sourceSlug.startsWith('bbox:')) {
+          // Geocoded (searched) city — the URL carries the box itself.
+          url.searchParams.set('bbox', draft.base.sourceSlug.slice(5));
+          url.searchParams.set('cityName', draft.base.sourceName);
+        } else {
+          url.searchParams.set('city', draft.base.sourceSlug);
+        }
       } else {
         const d = draft.base.directives;
         url.searchParams.set('seed', draft.base.seed);
@@ -310,6 +344,32 @@ export function App() {
   const loadCity = (slug: string): void => {
     const url = new URL(window.location.origin + window.location.pathname);
     url.searchParams.set('city', slug);
+    window.location.href = url.toString();
+  };
+
+  // Geocoding provider — swappable; ?geo=mock forces the offline dataset.
+  const geoProviderRef = useRef<GeocodingProvider | null>(null);
+  const searchCities = (
+    query: string,
+    signal: AbortSignal,
+  ): ReturnType<GeocodingProvider['searchCities']> => {
+    geoProviderRef.current ??=
+      new URLSearchParams(window.location.search).get('geo') === 'mock'
+        ? createMockGeocodingProvider()
+        : createPhotonProvider();
+    return geoProviderRef.current.searchCities(query, { signal, limit: 8 });
+  };
+
+  const selectCity = (candidate: {
+    lat: number;
+    lon: number;
+    bbox?: BBox;
+    label: string;
+  }): void => {
+    const area = candidateToCityArea(candidate);
+    const url = new URL(window.location.origin + window.location.pathname);
+    url.searchParams.set('bbox', area.bbox.join(','));
+    url.searchParams.set('cityName', area.name);
     window.location.href = url.toString();
   };
 
@@ -366,6 +426,11 @@ export function App() {
           onOpenDraft={openDraft}
           onLoadCity={loadCity}
           cityOptions={Object.values(CITY_PRESETS).map((c) => ({ slug: c.slug, name: c.name }))}
+          onSearchCities={searchCities}
+          onSelectCity={selectCity}
+          currentCityName={
+            engine.world.id.startsWith('osm:') ? engine.world.id.slice(4) : undefined
+          }
           onPromptGenerate={generateFromPrompt}
           initialApiKey={getStoredApiKey()}
           onTourToggle={toggleTour}

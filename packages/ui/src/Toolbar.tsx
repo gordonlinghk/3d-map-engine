@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useAtlas } from './context';
+import { CitySearch } from './CitySearch';
 import { TOGGLABLE_LAYERS, useAtlasStore } from './store';
-import type { CameraMode, EnvironmentMode } from './types';
+import type { CameraMode, CityCandidateLike, EnvironmentMode } from './types';
 
 const ENV_ORDER: EnvironmentMode[] = ['day', 'golden-hour', 'night'];
 const ENV_ICONS: Record<EnvironmentMode, string> = {
@@ -22,6 +23,12 @@ export type ToolbarProps = {
   /** Real-world cities (OSM imports). */
   cityOptions?: Array<{ slug: string; name: string }>;
   onLoadCity?: (slug: string) => void;
+  /** City geocoding search (enables the autocomplete input). */
+  onSearchCities?: (query: string, signal: AbortSignal) => Promise<CityCandidateLike[]>;
+  /** Called when the user picks a search candidate. */
+  onSelectCity?: (candidate: CityCandidateLike) => void;
+  /** Name of the currently loaded real city, if any. */
+  currentCityName?: string;
   /** Building editor (enables the ✏️ toggle). */
   onEditModeToggle?: (enabled: boolean) => void;
 };
@@ -41,6 +48,9 @@ export function Toolbar({
   initialApiKey,
   cityOptions,
   onLoadCity,
+  onSearchCities,
+  onSelectCity,
+  currentCityName,
   onEditModeToggle,
 }: ToolbarProps) {
   const editMode = useAtlasStore((s) => s.editMode);
@@ -231,31 +241,42 @@ export function Toolbar({
             Generate world
           </button>
 
-          {onLoadCity && cityOptions && cityOptions.length > 0 && (
+          {(onSearchCities || (onLoadCity && cityOptions && cityOptions.length > 0)) && (
             <>
               <div style={{ borderTop: '1px solid rgba(0,0,0,0.08)', margin: '4px -14px 0' }} />
-              <label style={{ display: 'grid', gap: 4 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>
-                  🗺 REAL CITY (OpenStreetMap)
-                </span>
-                <select
-                  data-testid="city-select"
-                  defaultValue=""
-                  onChange={(e) => {
-                    if (e.target.value) onLoadCity(e.target.value);
-                  }}
-                  style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)' }}
-                >
-                  <option value="" disabled>
-                    Load a real city…
-                  </option>
-                  {cityOptions.map((c) => (
-                    <option key={c.slug} value={c.slug}>
-                      {c.name}
+              {onSearchCities && onSelectCity && (
+                <CitySearch
+                  onSearch={onSearchCities}
+                  onSelect={onSelectCity}
+                  currentCityName={currentCityName}
+                />
+              )}
+              {onLoadCity && cityOptions && cityOptions.length > 0 && (
+                <label style={{ display: 'grid', gap: 4 }}>
+                  {!onSearchCities && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>
+                      🗺 REAL CITY (OpenStreetMap)
+                    </span>
+                  )}
+                  <select
+                    data-testid="city-select"
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value) onLoadCity(e.target.value);
+                    }}
+                    style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)' }}
+                  >
+                    <option value="" disabled>
+                      {onSearchCities ? '…or a curated pick' : 'Load a real city…'}
                     </option>
-                  ))}
-                </select>
-              </label>
+                    {cityOptions.map((c) => (
+                      <option key={c.slug} value={c.slug}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </>
           )}
 

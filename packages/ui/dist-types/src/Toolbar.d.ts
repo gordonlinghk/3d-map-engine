@@ -1,3 +1,4 @@
+import type { CityCandidateLike } from './types';
 export type ToolbarProps = {
     onTourToggle?: () => void;
     tourActive?: boolean;
@@ -13,7 +14,13 @@ export type ToolbarProps = {
         name: string;
     }>;
     onLoadCity?: (slug: string) => void;
+    /** City geocoding search (enables the autocomplete input). */
+    onSearchCities?: (query: string, signal: AbortSignal) => Promise<CityCandidateLike[]>;
+    /** Called when the user picks a search candidate. */
+    onSelectCity?: (candidate: CityCandidateLike) => void;
+    /** Name of the currently loaded real city, if any. */
+    currentCityName?: string;
     /** Building editor (enables the ✏️ toggle). */
     onEditModeToggle?: (enabled: boolean) => void;
 };
-export declare function Toolbar({ onTourToggle, tourActive, onReset, onGenerate, onPromptGenerate, initialApiKey, cityOptions, onLoadCity, onEditModeToggle, }: ToolbarProps): import("react").JSX.Element;
+export declare function Toolbar({ onTourToggle, tourActive, onReset, onGenerate, onPromptGenerate, initialApiKey, cityOptions, onLoadCity, onSearchCities, onSelectCity, currentCityName, onEditModeToggle, }: ToolbarProps): import("react").JSX.Element;

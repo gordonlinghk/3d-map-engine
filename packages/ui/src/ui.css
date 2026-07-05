@@ -505,3 +505,93 @@
     bottom: 14px;
   }
 }
+
+/* City geocoding search (world panel) */
+.atlas-city-search {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.atlas-city-search-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.atlas-city-search-row {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.atlas-city-search-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  font-size: 12.5px;
+}
+.atlas-city-search-row button {
+  padding: 6px 9px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  font-size: 13px;
+}
+.atlas-city-search-row button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.atlas-city-search-note {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.atlas-city-search-error {
+  font-size: 11.5px;
+  color: #b3382c;
+  line-height: 1.4;
+}
+.atlas-city-search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 9px;
+  background: #fff;
+}
+.atlas-city-search-results li + li {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+.atlas-city-search-results button {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.atlas-city-search-results button.active {
+  background: var(--accent-soft);
+}
+.atlas-city-search-results button b {
+  font-size: 12.5px;
+}
+.atlas-city-search-results button span {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.atlas-city-search-current {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

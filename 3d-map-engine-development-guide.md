@@ -116,6 +116,7 @@
 | B7 | OSM | `packages/osm/*`、`buildingsMesh.ts`(多邊形路徑)、`flatAreas.ts` | 見 §6.4 |
 | B6 | 編輯器 | `core/edits.ts`、`three/editor.ts`、`ui/EditorPanel.tsx` | 見 §6.5 |
 | B10 | 草稿檔 | `core/draft.ts`、`demo/drafts.ts`、`App.tsx` boot | `.mapdraft.json` = overlay + base 配方(procedural 存 seed/directives、OSM 內嵌快照);開檔 = sessionStorage 暫存(綁 URL、**保留不消費**,防 StrictMode double-mount)→ 導航 → boot 優先路徑 → `sanitizeOverlayForWorld` 漂移剔除 → 自動進編輯模式;存檔 FSA 覆寫(webdriver 一律下載) |
+| B11 | 城市搜尋 | `osm/geocode.ts`、`ui/CitySearch.tsx`、`App.tsx` | `GeocodingProvider` 抽象(預設 Photon 免 key;**Nominatim 政策禁 autocomplete 故不用**;mock provider 供離線)→ 候選(name/region/country/latlon/extent)→ `candidateToCityArea` 裁剪成 ~1.3×1.8km 視窗(整城 extent 會炸 Overpass)→ URL `?bbox=s,w,n,e&cityName=`(`parseBBoxSlug` 校驗)→ 復用 Overpass 流程;UI:400ms debounce、≥2 字元、AbortController+序號防過時、cache、鍵盤↑↓Enter;草稿 sourceSlug=`bbox:…` 相容 |
 
 ---
 

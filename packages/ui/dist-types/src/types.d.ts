@@ -49,6 +49,20 @@ export type EngineContextValue = {
     renderer: MapRendererLike;
     world: MapWorld;
 };
+/**
+ * Structural shape of a geocoding candidate (implemented by @map-engine/osm's
+ * `CityCandidate` — the UI package deliberately avoids importing it).
+ */
+export type CityCandidateLike = {
+    id: string;
+    name: string;
+    region?: string;
+    country?: string;
+    lat: number;
+    lon: number;
+    bbox?: [number, number, number, number];
+    label: string;
+};
 /** Structural interface of the building editor (implemented in @map-engine/three). */
 export interface BuildingEditorLike {
     setEnabled(v: boolean): void;
