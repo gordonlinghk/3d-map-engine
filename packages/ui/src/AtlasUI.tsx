@@ -28,15 +28,37 @@ export type AtlasUIProps = EngineContextValue &
   ToolbarProps & {
     editor?: BuildingEditorLike;
     onExportWorld?: () => void;
+    onSaveDraft?: () => void;
+    onOpenDraft?: () => void;
   };
 
-function MaybeEditorPanel({ editor, onExport }: { editor?: BuildingEditorLike; onExport?: () => void }) {
+function MaybeEditorPanel({
+  editor,
+  onExport,
+  onSaveDraft,
+  onOpenDraft,
+}: {
+  editor?: BuildingEditorLike;
+  onExport?: () => void;
+  onSaveDraft?: () => void;
+  onOpenDraft?: () => void;
+}) {
   const editMode = useAtlasStore((s) => s.editMode);
   if (!editMode || !editor) return null;
-  return <EditorPanel editor={editor} onExport={onExport} />;
+  return (
+    <EditorPanel editor={editor} onExport={onExport} onSaveDraft={onSaveDraft} onOpenDraft={onOpenDraft} />
+  );
 }
 
-export function AtlasUI({ renderer, world, editor, onExportWorld, ...toolbar }: AtlasUIProps) {
+export function AtlasUI({
+  renderer,
+  world,
+  editor,
+  onExportWorld,
+  onSaveDraft,
+  onOpenDraft,
+  ...toolbar
+}: AtlasUIProps) {
   // On narrow screens start with the list collapsed so the map stays visible.
   useEffect(() => {
     if (window.innerWidth < 900) useAtlasStore.getState().setPanelOpen(false);
@@ -53,7 +75,12 @@ export function AtlasUI({ renderer, world, editor, onExportWorld, ...toolbar }: 
           onEditModeToggle={editor ? (enabled) => editor.setEnabled(enabled) : undefined}
         />
         <InfoPanel />
-        <MaybeEditorPanel editor={editor} onExport={onExportWorld} />
+        <MaybeEditorPanel
+          editor={editor}
+          onExport={onExportWorld}
+          onSaveDraft={onSaveDraft}
+          onOpenDraft={onOpenDraft}
+        />
         <MiniMap />
         <Hud />
         <Hints />

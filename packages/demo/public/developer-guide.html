@@ -371,6 +371,7 @@ on(event, handler): off             onFrame(cb): off           dispose()</code><
 
 <h3>10.4 編輯器:命令 + overlay 雙層</h3>
 <p><strong>命令層</strong>(session 內):每個操作是 <code>{apply, revert}</code>,進 100 步歷史;commit / undo / redo 後一律 <code>refreshBuildings()</code>(重建 buildings group + pickables + colliders,並重掛選取高亮)。<strong>overlay 層</strong>(跨 session):editor 追蹤 modified/added/deleted id 集,任何變化即時導出 <code>EditOverlay</code> 交給 demo 存 localStorage;下次載入同一世界時先重放。匯出 JSON = <code>serializeMap(world)</code> 全量下載,可作遊戲存檔格式。</p>
+<p><strong>草稿檔層</strong>(跨機器 / 跨裝置):<code>core/draft.ts</code> 定義 <code>.mapdraft.json</code> 格式 —— <code>{format, version, name, createdAt, updatedAt, base, overlay}</code>。<code>base</code> 分兩種:程序生成世界只存配方(<code>{kind:'procedural', seed, directives}</code>,幾 KB);OSM 世界內嵌完整 <code>serializeMap</code> 快照(<code>{kind:'imported', sourceSlug, snapshot}</code>),因為 Overpass 資料會漂移。開檔流程(<code>demo/drafts.ts</code> + <code>App.tsx</code>):<code>parseDraft()</code> 校驗 → 草稿存入 sessionStorage(綁定目標 URL)→ 整頁導航 → boot 偵測 pending draft 優先於 URL 生成路徑 → <code>sanitizeOverlayForWorld()</code> 剔除引用已消失建築的條目(漂移防護)→ 套用 overlay → 自動進入編輯模式。存檔:支援 File System Access(Chromium)時經 file handle 覆寫同一檔案,否則下載;<code>navigator.webdriver</code> 一律走下載路徑(headless 無法操作原生對話框)。<strong>注意 sessionStorage 的 pending draft 是「保留不消費」的</strong>——React StrictMode 會 double-mount,若第一次 boot 就刪掉,第二次 boot 會退回 URL 路徑;改為 URL 不匹配時才清除,順帶讓「開草稿後手動刷新」保持狀態。</p>
 
 <h3>10.5 quality 機制與 CI 的關係</h3>
 <p>Shadow pass 讓 CI 的軟件渲染主線程完全飽和 → UI 互動超時。因此 <code>navigator.webdriver</code> 環境預設 <code>quality:'low'</code>(無陰影、pixelRatio 1),真人瀏覽器一律 high;<code>?q=high|low</code> 強制。<strong>headless 截圖要看陰影必須帶 <code>?q=high</code>;headless 顯示的 FPS(4~8)是軟渲染假象,不代表真機效能。</strong>這個開關同時是未來低端裝置降級的現成入口。</p>
@@ -487,6 +488,7 @@ on(event, handler): off             onFrame(cb): off           dispose()</code><
 <table>
   <tr><td><code>map-engine.anthropic-key</code></td><td>用戶自帶 Claude API key(只存本機)</td></tr>
   <tr><td><code>map-engine.edits.{world.id}|{cfg}</code></td><td>該世界的 <code>EditOverlay</code></td></tr>
+  <tr><td><code>map-engine.pending-draft</code>(sessionStorage)</td><td>開啟草稿檔後、導航重啟期間暫存的 <code>MapDraft</code>(綁定目標 URL,URL 不匹配即清除)</td></tr>
 </table>
 
 <h3>15.3 事件與除錯鉤子</h3>

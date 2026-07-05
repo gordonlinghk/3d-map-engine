@@ -2,11 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import {
   applyDirectives,
   applyEditOverlay,
+  createDraft,
+  deserializeMap,
   generateWorld,
   overlayIsEmpty,
+  parseDraft,
+  sanitizeOverlayForWorld,
   serializeMap,
 } from '@map-engine/core';
 import type {
+  DraftBase,
   EditOverlay,
   EnvironmentDirective,
   MapDirectives,
@@ -18,6 +23,7 @@ import type { BuildingEditor, ThreeMapRenderer, Tour } from '@map-engine/three';
 import { AtlasUI, useAtlasStore } from '@map-engine/ui';
 import { CITY_PRESETS, fetchOsmArea, osmToWorld } from '@map-engine/osm';
 import { getStoredApiKey, promptToDirectives, storeApiKey } from './promptToMap';
+import { saveDraftFile, stashPendingDraft, takePendingDraft } from './drafts';
 
 const DEFAULT_SEED = 'sf-atlas-001';
 const DEFAULT_PRESET: MapPresetId = 'coastal-tech-city';
@@ -82,6 +88,14 @@ export function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const tourRef = useRef<Tour | null>(null);
   const editorRef = useRef<BuildingEditor | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // How to rebuild the current base world + identity of the draft being edited.
+  const draftRef = useRef<{
+    base: DraftBase;
+    name?: string;
+    createdAt?: string;
+    handle: FileSystemFileHandle | null;
+  } | null>(null);
   const [tourActive, setTourActive] = useState(false);
   const [ready, setReady] = useState(false);
   const [loadingText, setLoadingText] = useState('Generating a procedural city…');
@@ -113,32 +127,74 @@ export function App() {
       const { seed, preset, directives, environment } = readUrlParams();
       const citySlug = new URLSearchParams(window.location.search).get('city');
       const city = citySlug ? CITY_PRESETS[citySlug] : undefined;
+      const pendingDraft = takePendingDraft(window.location.search);
 
       let world: MapWorld;
-      if (city) {
+      let base: DraftBase;
+      let env = environment;
+      if (pendingDraft?.base.kind === 'imported') {
+        // Draft embeds the base world — no network fetch, immune to OSM drift.
+        setLoadingText(`Restoring ${pendingDraft.base.sourceName} from draft…`);
+        world = deserializeMap(pendingDraft.base.snapshot);
+        base = pendingDraft.base;
+      } else if (pendingDraft?.base.kind === 'procedural') {
+        const d = pendingDraft.base.directives;
+        world = generateWorld(pendingDraft.base.seed, applyDirectives(d).config);
+        base = pendingDraft.base;
+        if (d.environment) env = d.environment;
+      } else if (city) {
         setLoadingText(`Fetching ${city.name} from OpenStreetMap…`);
         try {
           const osm = await fetchOsmArea(city.bbox);
           if (disposed) return;
           setLoadingText(`Building ${city.name}…`);
           world = osmToWorld(osm, { name: city.name, bbox: city.bbox });
+          // Snapshot the pristine base (before edits) so drafts of imported
+          // worlds are self-contained.
+          base = {
+            kind: 'imported',
+            sourceSlug: city.slug,
+            sourceName: city.name,
+            snapshot: serializeMap(world),
+          };
         } catch (err) {
           console.error('OSM load failed, falling back to procedural city', err);
           setLoadingText('OpenStreetMap unavailable — generating a procedural city…');
           world = generateWorld(seed, applyDirectives({ ...directives, preset }).config);
+          base = { kind: 'procedural', seed, directives: { ...directives, preset } };
         }
       } else {
         world = generateWorld(seed, applyDirectives({ ...directives, preset }).config);
+        base = { kind: 'procedural', seed, directives: { ...directives, preset } };
       }
       if (disposed) return;
+      draftRef.current = {
+        base,
+        name: pendingDraft?.name,
+        createdAt: pendingDraft?.createdAt,
+        handle: null,
+      };
 
-      // Re-apply saved user edits for this world before first render.
-      const savedOverlay = loadOverlay(world.id);
+      // Re-apply user edits (from the opened draft, or autosaved) before first render.
+      let savedOverlay: EditOverlay | undefined;
+      if (pendingDraft) {
+        const { overlay, droppedIds } = sanitizeOverlayForWorld(world, pendingDraft.overlay);
+        if (droppedIds.length > 0) {
+          console.warn(
+            `Draft references ${droppedIds.length} building(s) no longer in the base world — skipped:`,
+            droppedIds,
+          );
+        }
+        savedOverlay = overlay;
+        saveOverlay(world.id, overlay); // seed the autosave with the draft's edits
+      } else {
+        savedOverlay = loadOverlay(world.id);
+      }
       if (savedOverlay) applyEditOverlay(world, savedOverlay);
 
       void renderer.loadWorld(world);
-      renderer.setEnvironment(environment);
-      useAtlasStore.getState().setEnvironment(environment);
+      renderer.setEnvironment(env);
+      useAtlasStore.getState().setEnvironment(env);
       const tour = createTour(renderer, world);
       tourRef.current = tour;
       const editor = createBuildingEditor(renderer, world, {
@@ -146,6 +202,11 @@ export function App() {
         onOverlayChange: (overlay) => saveOverlay(world.id, overlay),
       });
       editorRef.current = editor;
+      if (pendingDraft) {
+        // Resume editing right away — that's what opening a draft is for.
+        useAtlasStore.getState().setEditMode(true);
+        editor.setEnabled(true);
+      }
       (window as unknown as Record<string, unknown>).__mapEngine = {
         renderer,
         world,
@@ -174,6 +235,57 @@ export function App() {
     a.download = `${world.id.replace(/[^a-z0-9-]+/gi, '-')}.map.json`;
     a.click();
     URL.revokeObjectURL(a.href);
+  };
+
+  const saveDraft = async (): Promise<void> => {
+    const editor = editorRef.current;
+    const world = engine?.world;
+    const info = draftRef.current;
+    if (!editor || !world || !info) return;
+    const draft = createDraft({
+      name: info.name ?? world.id.replace(/[^a-z0-9-]+/gi, '-'),
+      base: info.base,
+      overlay: editor.getOverlay(),
+      now: new Date().toISOString(),
+      createdAt: info.createdAt,
+    });
+    try {
+      info.handle = await saveDraftFile(draft, info.handle);
+      info.name = draft.name;
+      info.createdAt = draft.createdAt;
+    } catch (err) {
+      alert(`Could not save draft: ${(err as Error).message}`);
+    }
+  };
+
+  const openDraftFile = async (file: File): Promise<void> => {
+    try {
+      const draft = parseDraft(await file.text());
+      // Navigate to a URL matching the draft's base so the regular boot path
+      // (and the localStorage autosave key, which includes cfg) line up.
+      const url = new URL(window.location.origin + window.location.pathname);
+      if (draft.base.kind === 'imported') {
+        url.searchParams.set('city', draft.base.sourceSlug);
+      } else {
+        const d = draft.base.directives;
+        url.searchParams.set('seed', draft.base.seed);
+        if (d.preset) url.searchParams.set('preset', d.preset);
+        if (d.environment) url.searchParams.set('env', d.environment);
+        const numeric: MapDirectives = { ...d };
+        delete numeric.preset;
+        delete numeric.seed;
+        delete numeric.environment;
+        if (Object.keys(numeric).length > 0) url.searchParams.set('cfg', encodeCfg(numeric));
+      }
+      stashPendingDraft(draft, url.search);
+      window.location.href = url.toString();
+    } catch (err) {
+      alert(`Could not open draft: ${(err as Error).message}`);
+    }
+  };
+
+  const openDraft = (): void => {
+    fileInputRef.current?.click();
   };
 
   const toggleTour = (): void => {
@@ -230,6 +342,18 @@ export function App() {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      <input
+        ref={fileInputRef}
+        data-testid="draft-file-input"
+        type="file"
+        accept=".json,application/json"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) void openDraftFile(file);
+        }}
+      />
       {engine && (
         <AtlasUI
           renderer={engine.renderer}
@@ -238,6 +362,8 @@ export function App() {
           onGenerate={generate}
           editor={editorRef.current ?? undefined}
           onExportWorld={exportWorld}
+          onSaveDraft={() => void saveDraft()}
+          onOpenDraft={openDraft}
           onLoadCity={loadCity}
           cityOptions={Object.values(CITY_PRESETS).map((c) => ({ slug: c.slug, name: c.name }))}
           onPromptGenerate={generateFromPrompt}

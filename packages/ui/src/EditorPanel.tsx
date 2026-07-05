@@ -13,7 +13,17 @@ const btn: React.CSSProperties = {
   fontWeight: 600,
 };
 
-export function EditorPanel({ editor, onExport }: { editor: BuildingEditorLike; onExport?: () => void }) {
+export function EditorPanel({
+  editor,
+  onExport,
+  onSaveDraft,
+  onOpenDraft,
+}: {
+  editor: BuildingEditorLike;
+  onExport?: () => void;
+  onSaveDraft?: () => void;
+  onOpenDraft?: () => void;
+}) {
   const { renderer } = useAtlas();
   const selectedId = useAtlasStore((s) => s.selectedId);
   const [, setTick] = useState(0);
@@ -122,7 +132,21 @@ export function EditorPanel({ editor, onExport }: { editor: BuildingEditorLike; 
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 14, borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: 12 }}>
+        {(onSaveDraft || onOpenDraft) && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: 12 }}>
+            {onSaveDraft && (
+              <button data-testid="editor-save-draft" style={btn} onClick={onSaveDraft}>
+                💾 Save draft
+              </button>
+            )}
+            {onOpenDraft && (
+              <button data-testid="editor-open-draft" style={btn} onClick={onOpenDraft}>
+                📂 Open draft
+              </button>
+            )}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           {onExport && (
             <button data-testid="editor-export" style={btn} onClick={onExport}>
               ⬇ Export world JSON

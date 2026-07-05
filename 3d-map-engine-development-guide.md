@@ -102,7 +102,7 @@
 - **易錯點**:Pages 剛啟用時 deploy 可能暫時性失敗(“try again later”);**同一 run 重跑會產生兩個同名 artifact 而再失敗——正確做法是 `gh workflow run` 觸發全新 run**。
 - **驗證**:CI 綠 + live URL 截圖。
 
-### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6
+### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10
 
 | 代號 | 內容 | 關鍵檔案 | 一句話要點 |
 |---|---|---|---|
@@ -115,6 +115,7 @@
 | B8 | npm 基建 | 各包 `tsup.config.ts`/`tsconfig.build.json`/`publishConfig`、`release.yml` | 建置驗證過、**實際發佈擱置**(用戶決定) |
 | B7 | OSM | `packages/osm/*`、`buildingsMesh.ts`(多邊形路徑)、`flatAreas.ts` | 見 §6.4 |
 | B6 | 編輯器 | `core/edits.ts`、`three/editor.ts`、`ui/EditorPanel.tsx` | 見 §6.5 |
+| B10 | 草稿檔 | `core/draft.ts`、`demo/drafts.ts`、`App.tsx` boot | `.mapdraft.json` = overlay + base 配方(procedural 存 seed/directives、OSM 內嵌快照);開檔 = sessionStorage 暫存(綁 URL、**保留不消費**,防 StrictMode double-mount)→ 導航 → boot 優先路徑 → `sanitizeOverlayForWorld` 漂移剔除 → 自動進編輯模式;存檔 FSA 覆寫(webdriver 一律下載) |
 
 ---
 

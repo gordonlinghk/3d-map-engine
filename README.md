@@ -22,6 +22,8 @@ Demo URL parameters: `?seed=<any-string>&preset=coastal-tech-city|island-city|do
 
 Toggle ✏️ in the toolbar: click a building to rename it, change floors, rotate (±15°), delete, or drag it to a new spot; use ＋ Add to place new buildings anywhere. Full undo/redo (100 steps). Edits are saved to localStorage per world and re-applied on reload; “Export world JSON” downloads the full serialized `MapWorld`. Works on procedural and OSM worlds alike.
 
+**Drafts 💾** — “Save draft” writes a portable `.mapdraft.json` file (edits + how to rebuild the base world: procedural worlds store their seed/directives recipe, OSM worlds embed a full snapshot so upstream data drift can’t break the draft). “Open draft” restores it — on any machine, any later day — and drops you straight back into edit mode to continue. On Chromium browsers repeat saves overwrite the same file via the File System Access API; elsewhere each save downloads a fresh copy. localStorage autosave still runs alongside as a crash safety net.
+
 ### Real cities (OpenStreetMap) 🗺
 
 Pick a real city in the 🌍 World panel (or `?city=tokyo-shibuya|hong-kong-central|manhattan-midtown|london-city`). Building footprints, heights, road networks, parks and water are fetched live from the Overpass API and converted into a `MapWorld` by [`@map-engine/osm`](packages/osm) — real polygon buildings are extruded into a single merged mesh with per-face picking, named buildings are searchable, and cars drive the real streets. Data © OpenStreetMap contributors (ODbL). v1 limitations: flat terrain (no elevation), no multipolygon relations, coastal sea not reconstructed.

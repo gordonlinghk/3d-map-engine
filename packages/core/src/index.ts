@@ -19,6 +19,15 @@ export {
   type EditOverlay,
 } from './edits';
 export {
+  createDraft,
+  parseDraft,
+  sanitizeOverlayForWorld,
+  DRAFT_FORMAT,
+  DRAFT_VERSION,
+  type DraftBase,
+  type MapDraft,
+} from './draft';
+export {
   applyDirectives,
   parsePromptLocally,
   MAP_DIRECTIVES_JSON_SCHEMA,

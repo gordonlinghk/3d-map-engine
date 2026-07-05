@@ -5,5 +5,7 @@ import type { EngineContextValue } from './types';
 export type AtlasUIProps = EngineContextValue & ToolbarProps & {
     editor?: BuildingEditorLike;
     onExportWorld?: () => void;
+    onSaveDraft?: () => void;
+    onOpenDraft?: () => void;
 };
-export declare function AtlasUI({ renderer, world, editor, onExportWorld, ...toolbar }: AtlasUIProps): import("react").JSX.Element;
+export declare function AtlasUI({ renderer, world, editor, onExportWorld, onSaveDraft, onOpenDraft, ...toolbar }: AtlasUIProps): import("react").JSX.Element;
