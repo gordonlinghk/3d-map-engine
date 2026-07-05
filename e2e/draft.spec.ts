@@ -52,10 +52,13 @@ test('draft: save to file, reopen, edits restored and editing resumes', async ({
   // Wipe the autosave so restoration can only come from the draft file.
   await page.evaluate(() => localStorage.clear());
   const chooserPromise = page.waitForEvent('filechooser');
+  // Opening navigates (async: file read → stash → location.href). Wait for the
+  // navigation itself first — the OLD page also has __mapEngine, so waiting
+  // for the engine alone races with the reload.
+  const navPromise = page.waitForEvent('framenavigated');
   await page.getByTestId('editor-open-draft').click();
   await (await chooserPromise).setFiles(draftPath);
-
-  // Opening navigates and reboots the world from the draft.
+  await navPromise;
   await waitForEngine(page);
   const restored = await page.evaluate((bid) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,7 +128,9 @@ test('draft: OSM world reopens from its snapshot without refetching', async ({ p
   await page.route('**/overpass-api.de/**', (route) => route.abort());
   await page.evaluate(() => localStorage.clear());
 
+  const navPromise = page.waitForEvent('framenavigated');
   await page.getByTestId('draft-file-input').setInputFiles(draftPath);
+  await navPromise;
   await waitForEngine(page);
 
   const restored = await page.evaluate(() => {
