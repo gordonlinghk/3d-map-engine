@@ -47,14 +47,17 @@ test('walk mode: buildings block movement (no walking through walls)', async ({ 
 
     const b = candidate.building;
     const r = rect(b.footprint);
-    eng.renderer.setCameraMode('walk');
     const cam = eng.renderer.camera;
+    // Orient BEFORE switching to walk — setCameraMode('walk') syncs the rig's
+    // yaw/pitch from the current camera quaternion.
     cam.position.set(b.position.x, cam.position.y, r.minZ - 12);
     cam.lookAt(b.position.x, cam.position.y, r.minZ + 10);
+    eng.renderer.setCameraMode('walk');
     return { x: b.position.x, minZ: r.minZ, maxZ: r.maxZ };
   });
 
-  await page.locator('canvas').first().click({ position: { x: 700, y: 400 } });
+  // No canvas click — that would request pointer lock, whose synthetic
+  // pointermove events overwrite the orientation on some headless builds.
   await page.keyboard.down('KeyW');
   // Hold W until the camera has clearly moved toward the wall (slow CI needs
   // wall-clock time to produce frames), or give up after 12s.
