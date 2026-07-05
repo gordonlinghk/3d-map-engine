@@ -1,20 +1,44 @@
 import { useEffect, useRef, useState } from 'react';
-import { generateWorld, getPresetConfig } from '@map-engine/core';
-import type { MapPresetId, MapWorld } from '@map-engine/core';
+import { applyDirectives, generateWorld } from '@map-engine/core';
+import type { EnvironmentDirective, MapDirectives, MapPresetId, MapWorld } from '@map-engine/core';
 import { createThreeMapRenderer, createTour } from '@map-engine/three';
 import type { ThreeMapRenderer, Tour } from '@map-engine/three';
-import { AtlasUI } from '@map-engine/ui';
+import { AtlasUI, useAtlasStore } from '@map-engine/ui';
+import { getStoredApiKey, promptToDirectives, storeApiKey } from './promptToMap';
 
 const DEFAULT_SEED = 'sf-atlas-001';
 const DEFAULT_PRESET: MapPresetId = 'coastal-tech-city';
 const PRESETS: MapPresetId[] = ['coastal-tech-city', 'island-city', 'downtown-night-grid'];
+const ENVIRONMENTS: EnvironmentDirective[] = ['day', 'golden-hour', 'night'];
 
-function readUrlParams(): { seed: string; preset: MapPresetId } {
+function decodeCfg(raw: string | null): MapDirectives {
+  if (!raw) return {};
+  try {
+    return JSON.parse(atob(raw.replace(/-/g, '+').replace(/_/g, '/'))) as MapDirectives;
+  } catch {
+    return {};
+  }
+}
+
+function encodeCfg(directives: MapDirectives): string {
+  return btoa(JSON.stringify(directives)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function readUrlParams(): {
+  seed: string;
+  preset: MapPresetId;
+  directives: MapDirectives;
+  environment: EnvironmentDirective;
+} {
   const params = new URLSearchParams(window.location.search);
   const preset = params.get('preset') as MapPresetId | null;
+  const env = params.get('env') as EnvironmentDirective | null;
+  const directives = decodeCfg(params.get('cfg'));
   return {
     seed: params.get('seed') ?? DEFAULT_SEED,
-    preset: preset && PRESETS.includes(preset) ? preset : DEFAULT_PRESET,
+    preset: preset && PRESETS.includes(preset) ? preset : (directives.preset ?? DEFAULT_PRESET),
+    directives,
+    environment: env && ENVIRONMENTS.includes(env) ? env : (directives.environment ?? 'day'),
   };
 }
 
@@ -36,9 +60,12 @@ export function App() {
       // Let a couple of frames render behind the overlay before revealing.
       setTimeout(() => setReady(true), 250);
     });
-    const { seed, preset } = readUrlParams();
-    const world = generateWorld(seed, getPresetConfig(preset));
+    const { seed, preset, directives, environment } = readUrlParams();
+    const { config } = applyDirectives({ ...directives, preset });
+    const world = generateWorld(seed, config);
     void renderer.loadWorld(world);
+    renderer.setEnvironment(environment);
+    useAtlasStore.getState().setEnvironment(environment);
     const tour = createTour(renderer, world);
     tourRef.current = tour;
     (window as unknown as Record<string, unknown>).__mapEngine = { renderer, world, tour };
@@ -63,6 +90,30 @@ export function App() {
     const url = new URL(window.location.href);
     url.searchParams.set('seed', seed);
     url.searchParams.set('preset', preset);
+    // Manual preset/seed selection drops prompt-derived overrides.
+    url.searchParams.delete('cfg');
+    url.searchParams.delete('env');
+    window.location.href = url.toString();
+  };
+
+  const generateFromPrompt = async (prompt: string, apiKey: string): Promise<void> => {
+    storeApiKey(apiKey);
+    const { directives } = await promptToDirectives(prompt, apiKey);
+    const { preset: currentPreset } = readUrlParams();
+    const url = new URL(window.location.href);
+    url.searchParams.set('preset', directives.preset ?? currentPreset);
+    url.searchParams.set(
+      'seed',
+      directives.seed ?? `seed-${Math.random().toString(36).slice(2, 8)}`,
+    );
+    if (directives.environment) url.searchParams.set('env', directives.environment);
+    else url.searchParams.delete('env');
+    const numeric: MapDirectives = { ...directives };
+    delete numeric.preset;
+    delete numeric.seed;
+    delete numeric.environment;
+    if (Object.keys(numeric).length > 0) url.searchParams.set('cfg', encodeCfg(numeric));
+    else url.searchParams.delete('cfg');
     window.location.href = url.toString();
   };
 
@@ -80,6 +131,8 @@ export function App() {
           world={engine.world}
           onReset={reset}
           onGenerate={generate}
+          onPromptGenerate={generateFromPrompt}
+          initialApiKey={getStoredApiKey()}
           onTourToggle={toggleTour}
           tourActive={tourActive}
         />

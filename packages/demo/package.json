@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
     "@map-engine/core": "workspace:*",
     "@map-engine/three": "workspace:*",
     "@map-engine/ui": "workspace:*",

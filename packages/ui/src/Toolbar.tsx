@@ -16,6 +16,9 @@ export type ToolbarProps = {
   onReset?: () => void;
   /** Regenerate the world with an explicit seed + preset. */
   onGenerate?: (seed: string, preset: string) => void;
+  /** Prompt-to-map: describe a city in natural language. */
+  onPromptGenerate?: (prompt: string, apiKey: string) => Promise<void>;
+  initialApiKey?: string;
 };
 
 const PRESET_OPTIONS = [
@@ -24,11 +27,35 @@ const PRESET_OPTIONS = [
   { id: 'downtown-night-grid', label: 'Downtown Night Grid' },
 ];
 
-export function Toolbar({ onTourToggle, tourActive, onReset, onGenerate }: ToolbarProps) {
+export function Toolbar({
+  onTourToggle,
+  tourActive,
+  onReset,
+  onGenerate,
+  onPromptGenerate,
+  initialApiKey,
+}: ToolbarProps) {
   const { renderer, world } = useAtlas();
   const [worldOpen, setWorldOpen] = useState(false);
   const [seedDraft, setSeedDraft] = useState(world.seed);
   const [presetDraft, setPresetDraft] = useState<string>(world.config.preset);
+  const [prompt, setPrompt] = useState('');
+  const [apiKey, setApiKey] = useState(initialApiKey ?? '');
+  const [keyOpen, setKeyOpen] = useState(false);
+  const [promptBusy, setPromptBusy] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
+
+  const runPrompt = async (): Promise<void> => {
+    if (!prompt.trim() || !onPromptGenerate || promptBusy) return;
+    setPromptBusy(true);
+    setPromptError(null);
+    try {
+      await onPromptGenerate(prompt.trim(), apiKey.trim());
+    } catch (err) {
+      setPromptError(err instanceof Error ? err.message : String(err));
+      setPromptBusy(false);
+    }
+  };
   const cameraMode = useAtlasStore((s) => s.cameraMode);
   const setCameraMode = useAtlasStore((s) => s.setCameraMode);
   const environment = useAtlasStore((s) => s.environment);
@@ -176,6 +203,99 @@ export function Toolbar({ onTourToggle, tourActive, onReset, onGenerate }: Toolb
           >
             Generate world
           </button>
+
+          {onPromptGenerate && (
+            <>
+              <div
+                style={{
+                  borderTop: '1px solid rgba(0,0,0,0.08)',
+                  margin: '4px -14px 0',
+                }}
+              />
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>
+                  ✨ DESCRIBE A CITY
+                </span>
+                <textarea
+                  data-testid="prompt-input"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="e.g. a mountainous island city at night with dense skyscrapers…"
+                  rows={3}
+                  style={{
+                    padding: '7px 9px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(0,0,0,0.12)',
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
+                    fontSize: 12.5,
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void runPrompt();
+                  }}
+                />
+              </label>
+              <button
+                onClick={() => setKeyOpen((v) => !v)}
+                style={{
+                  border: 'none',
+                  background: 'none',
+                  textAlign: 'left',
+                  fontSize: 11,
+                  color: 'var(--text-dim)',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                {keyOpen ? '▾' : '▸'} Claude API key {apiKey ? '· set' : '· optional'}
+              </button>
+              {keyOpen && (
+                <label style={{ display: 'grid', gap: 4 }}>
+                  <input
+                    data-testid="prompt-api-key"
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="sk-ant-… (stored locally in your browser)"
+                    style={{
+                      padding: '6px 8px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(0,0,0,0.12)',
+                      fontSize: 12,
+                    }}
+                  />
+                  <span style={{ fontSize: 10.5, color: 'var(--text-dim)', lineHeight: 1.4 }}>
+                    With a key, Claude interprets your prompt. Without one, a simple keyword
+                    parser is used. The key never leaves your browser.
+                  </span>
+                </label>
+              )}
+              <button
+                data-testid="prompt-generate"
+                disabled={promptBusy || !prompt.trim()}
+                onClick={() => void runPrompt()}
+                style={{
+                  padding: '8px',
+                  border: 'none',
+                  borderRadius: 9,
+                  background: promptBusy ? 'rgba(0,0,0,0.2)' : '#5b4bd6',
+                  color: '#fff',
+                  fontWeight: 700,
+                  cursor: promptBusy ? 'wait' : 'pointer',
+                }}
+              >
+                {promptBusy ? 'Dreaming up your city…' : '✨ Generate from prompt'}
+              </button>
+              {promptError && (
+                <div
+                  data-testid="prompt-error"
+                  style={{ fontSize: 11.5, color: '#b3382c', lineHeight: 1.4 }}
+                >
+                  {promptError}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
       {layersOpen && (

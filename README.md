@@ -14,7 +14,16 @@ pnpm test:e2e     # e2e + visual tests (Playwright; run `npx playwright install 
 pnpm build        # production build of the demo
 ```
 
-Demo URL parameters: `?seed=<any-string>&preset=coastal-tech-city|island-city|downtown-night-grid`
+Demo URL parameters: `?seed=<any-string>&preset=coastal-tech-city|island-city|downtown-night-grid&env=day|golden-hour|night&cfg=<base64url MapDirectives>`
+
+### Prompt-to-map ✨
+
+Open the 🌍 World panel and describe a city in natural language (English or Chinese) — e.g. *"a mountainous island city at night with dense skyscrapers"* / *「黃昏的海灣城市,有大橋和密集高樓」*. Two modes:
+
+- **With a Claude API key** (stored only in your browser's localStorage, sent directly to the Anthropic API): Claude translates the description into map directives via structured outputs.
+- **Without a key**: a built-in keyword parser handles common descriptors offline.
+
+Either way the result is a set of clamped `MapDirectives` (preset, environment, hilliness, density, max floors…) applied deterministically through `applyDirectives()` — shareable via the `cfg` URL parameter.
 
 ### Controls
 
