@@ -314,12 +314,16 @@ export function generateCity(
   }
 
   // Stadium: take over a waterfront-ish block near downtown.
-  const stadiumBlock = blocks
-    .filter((b) => b.kind !== 'park' && Math.hypot(b.cx - center.x, b.cz - center.y) > 120)
-    .sort(
-      (a, b) =>
-        Math.hypot(a.cx - center.x, a.cz - center.y) - Math.hypot(b.cx - center.x, b.cz - center.y),
-    )[0];
+  const stadiumCandidates = blocks.filter(
+    (b) => b.kind === 'waterfront' && Math.hypot(b.cx - center.x, b.cz - center.y) > 120,
+  );
+  const stadiumPool = stadiumCandidates.length > 0
+    ? stadiumCandidates
+    : blocks.filter((b) => b.kind !== 'park' && Math.hypot(b.cx - center.x, b.cz - center.y) > 120);
+  const stadiumBlock = stadiumPool.sort(
+    (a, b) =>
+      Math.hypot(a.cx - center.x, a.cz - center.y) - Math.hypot(b.cx - center.x, b.cz - center.y),
+  )[0];
   if (stadiumBlock) {
     const sx = stadiumBlock.cx;
     const sz = stadiumBlock.cz;
