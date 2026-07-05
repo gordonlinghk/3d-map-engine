@@ -67,6 +67,9 @@ test('OSM city loads via mocked Overpass and is searchable', async ({ page }) =>
   await page.getByTestId('search-results').getByText('Mock Tower').first().click();
   await expect(page.getByTestId('info-panel')).toContainText('Mock Tower');
 
-  // OSM attribution is shown.
+  // OSM attribution is shown (open the collapsed panel on mobile first).
+  if (await page.getByTestId('side-open').isVisible()) {
+    await page.getByTestId('side-open').click();
+  }
   await expect(page.getByTestId('side-panel')).toContainText('OpenStreetMap');
 });
