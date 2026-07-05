@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { chunkOrigin, chunkKey } from '@map-engine/core';
-import type { MapWorld, MapChunk } from '@map-engine/core';
+import type { CityBlockKind, MapWorld, MapChunk } from '@map-engine/core';
 
 /** Low-poly terrain palette, from beach up to rocky peaks. */
 const COLOR_BEACH = new THREE.Color('#ddcfa4');
@@ -9,6 +9,15 @@ const COLOR_GRASS = new THREE.Color('#79a860');
 const COLOR_FOREST = new THREE.Color('#4d7a4a');
 const COLOR_ROCK = new THREE.Color('#8d8a83');
 const COLOR_SEABED = new THREE.Color('#b8ac89');
+
+/** Ground tint per city-block kind — makes the zoning readable from above. */
+const BLOCK_COLORS: Record<CityBlockKind, THREE.Color> = {
+  downtown: new THREE.Color('#e2e0da'),
+  commercial: new THREE.Color('#d7d4cc'),
+  residential: new THREE.Color('#ddd5c6'),
+  waterfront: new THREE.Color('#d3cab4'),
+  park: new THREE.Color('#83b264'),
+};
 
 function colorForHeight(h: number, waterLevel: number, _maxHeight: number, out: THREE.Color): void {
   if (h <= waterLevel) {
@@ -25,11 +34,16 @@ function colorForHeight(h: number, waterLevel: number, _maxHeight: number, out: 
   else out.lerpColors(COLOR_FOREST, COLOR_ROCK, Math.min((t - 45) / 30, 1));
 }
 
-function buildChunkGeometry(world: MapWorld, chunk: MapChunk): THREE.BufferGeometry {
+function buildChunkGeometry(
+  world: MapWorld,
+  chunk: MapChunk,
+  blockKinds: Map<string, CityBlockKind>,
+): THREE.BufferGeometry {
   const res = chunk.resolution;
   const origin = chunkOrigin(world.config, chunk.coord);
   const step = world.config.chunkSize / res;
   const vertsPerRow = res + 1;
+  const spacing = world.config.city.blockSize;
 
   const positions = new Float32Array(vertsPerRow * vertsPerRow * 3);
   const colors = new Float32Array(vertsPerRow * vertsPerRow * 3);
@@ -39,10 +53,19 @@ function buildChunkGeometry(world: MapWorld, chunk: MapChunk): THREE.BufferGeome
     for (let i = 0; i < vertsPerRow; i++) {
       const idx = j * vertsPerRow + i;
       const h = chunk.heights[idx]!;
-      positions[idx * 3] = origin.x + i * step;
+      const x = origin.x + i * step;
+      const z = origin.z + j * step;
+      positions[idx * 3] = x;
       positions[idx * 3 + 1] = h;
-      positions[idx * 3 + 2] = origin.z + j * step;
-      colorForHeight(h, world.config.waterLevel, world.config.terrain.maxHeight, color);
+      positions[idx * 3 + 2] = z;
+
+      const kind =
+        h > world.config.waterLevel
+          ? blockKinds.get(`${Math.floor(x / spacing)},${Math.floor(z / spacing)}`)
+          : undefined;
+      if (kind) color.copy(BLOCK_COLORS[kind]);
+      else colorForHeight(h, world.config.waterLevel, world.config.terrain.maxHeight, color);
+
       colors[idx * 3] = color.r;
       colors[idx * 3 + 1] = color.g;
       colors[idx * 3 + 2] = color.b;
@@ -77,9 +100,10 @@ function buildChunkGeometry(world: MapWorld, chunk: MapChunk): THREE.BufferGeome
 export function buildTerrainGroup(world: MapWorld): THREE.Group {
   const group = new THREE.Group();
   group.name = 'terrain';
+  const blockKinds = new Map(world.blocks.map((b) => [`${b.i},${b.j}`, b.kind]));
   const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   for (const chunk of Object.values(world.chunks)) {
-    const mesh = new THREE.Mesh(buildChunkGeometry(world, chunk), material);
+    const mesh = new THREE.Mesh(buildChunkGeometry(world, chunk, blockKinds), material);
     mesh.name = `terrain:${chunkKey(chunk.coord)}`;
     mesh.receiveShadow = true;
     group.add(mesh);

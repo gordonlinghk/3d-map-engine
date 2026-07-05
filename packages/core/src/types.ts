@@ -132,6 +132,16 @@ export type MapConfig = {
   city: CityConfig;
 };
 
+export type CityBlockKind = 'downtown' | 'commercial' | 'residential' | 'waterfront' | 'park';
+
+/** One city block (the cell between adjacent grid streets). */
+export type CityBlock = {
+  i: number;
+  j: number;
+  center: Vec2;
+  kind: CityBlockKind;
+};
+
 export type MapWorld = {
   id: string;
   seed: string;
@@ -139,6 +149,7 @@ export type MapWorld = {
   chunks: ChunkIndex;
   objects: Record<string, MapObject>;
   districts: District[];
+  blocks: CityBlock[];
   roadGraph: RoadGraph;
   landmarks: LandmarkInfo[];
 };
@@ -150,4 +161,12 @@ export type SerializedMap = {
   world: MapWorld;
 };
 
-export type MapLayerId = 'terrain' | 'water' | 'roads' | 'buildings' | 'landmarks' | 'labels' | 'trees';
+export type MapLayerId =
+  | 'terrain'
+  | 'water'
+  | 'roads'
+  | 'buildings'
+  | 'landmarks'
+  | 'labels'
+  | 'trees'
+  | 'traffic';

@@ -67,6 +67,7 @@ export function generateWorld(seed: string, config: MapConfig): MapWorld {
     chunks,
     objects,
     districts: city.districts,
+    blocks: city.blocks,
     roadGraph: generateRoadGraph(seed, config, sampler),
     landmarks: city.landmarks,
   };

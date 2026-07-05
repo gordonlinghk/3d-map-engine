@@ -43,6 +43,7 @@ function sampleWorld(): MapWorld {
         },
       },
     },
+    blocks: [{ i: 0, j: 0, center: { x: 20, y: 20 }, kind: 'downtown' }],
     districts: [
       {
         id: 'district-1',

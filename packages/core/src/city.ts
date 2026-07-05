@@ -4,6 +4,8 @@ import { createRng, type Rng } from './rng';
 import type { HeightSampler } from './terrain';
 import type {
   BuildingInfo,
+  CityBlock,
+  CityBlockKind,
   District,
   DistrictKind,
   LandmarkInfo,
@@ -16,12 +18,13 @@ export type TreeObject = { id: string; name: string; position: Vec3; tags: strin
 
 export type CityData = {
   districts: District[];
+  blocks: CityBlock[];
   buildings: BuildingInfo[];
   landmarks: LandmarkInfo[];
   trees: TreeObject[];
 };
 
-type BlockKind = 'downtown' | 'commercial' | 'residential' | 'waterfront' | 'park';
+type BlockKind = CityBlockKind;
 
 const RESIDENTIAL_NAMES_A = ['Harbor', 'Cedar', 'Sunset', 'Bayview', 'Alder', 'Hillcrest', 'Fog Hollow', 'Presidio', 'Juniper', 'Dolores', 'Clement', 'Noe', 'Castro', 'Balboa', 'Laguna'];
 const RESIDENTIAL_NAMES_B = ['Flats', 'Residences', 'Court', 'Terrace', 'Row', 'Lofts', 'Commons', 'Heights', 'Place', 'Yard'];
@@ -422,7 +425,13 @@ export function generateCity(
     }
   }
 
-  return { districts, buildings, landmarks, trees };
+  return {
+    districts,
+    blocks: blocks.map((b) => ({ i: b.i, j: b.j, center: { x: b.cx, y: b.cz }, kind: b.kind })),
+    buildings,
+    landmarks,
+    trees,
+  };
 }
 
 export type { DistrictKind };

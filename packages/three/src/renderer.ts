@@ -7,6 +7,7 @@ import { buildRoadsMesh } from './roadMesh';
 import { buildBuildingsGroup, type BuildingsBuildResult } from './buildingsMesh';
 import { buildTreesGroup } from './treesMesh';
 import { buildLandmarksGroup } from './landmarksGroup';
+import { createSimulationLayer, type SimulationLayer } from './simulation';
 import { createEmitter } from './events';
 import { createCameraRig } from './cameraRig';
 import {
@@ -116,6 +117,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
   let currentWorld: MapWorld | null = null;
   let buildingsResult: BuildingsBuildResult | null = null;
   let landmarksGroup: THREE.Group | null = null;
+  let simulation: SimulationLayer | null = null;
   let pickables = new Map<string, PickableInfo>();
   let highlights: Highlights | null = null;
   let hoveredId: string | null = null;
@@ -284,6 +286,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
     }
 
     highlights?.tick(now / 1000);
+    simulation?.update(dt);
     for (const cb of frameCallbacks) cb(dt);
     renderer.render(scene, camera);
   };
@@ -321,6 +324,8 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       buildingsResult = buildBuildingsGroup(world);
       const trees = buildTreesGroup(world);
       landmarksGroup = buildLandmarksGroup(world);
+      simulation?.dispose();
+      simulation = createSimulationLayer(world);
 
       layerGroups.set('terrain', terrain);
       layerGroups.set('water', water);
@@ -328,7 +333,16 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       layerGroups.set('buildings', buildingsResult.group);
       layerGroups.set('trees', trees);
       layerGroups.set('landmarks', landmarksGroup);
-      worldRoot.add(terrain, water, roads, buildingsResult.group, trees, landmarksGroup);
+      layerGroups.set('traffic', simulation.group);
+      worldRoot.add(
+        terrain,
+        water,
+        roads,
+        buildingsResult.group,
+        trees,
+        landmarksGroup,
+        simulation.group,
+      );
       scene.add(worldRoot);
 
       pickables = buildPickableIndex(world, landmarksGroup);

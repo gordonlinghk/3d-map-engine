@@ -1,5 +1,5 @@
 import type { HeightSampler } from './terrain';
-import type { BuildingInfo, District, DistrictKind, LandmarkInfo, MapConfig, Vec3 } from './types';
+import type { BuildingInfo, CityBlock, District, DistrictKind, LandmarkInfo, MapConfig, Vec3 } from './types';
 export type TreeObject = {
     id: string;
     name: string;
@@ -8,6 +8,7 @@ export type TreeObject = {
 };
 export type CityData = {
     districts: District[];
+    blocks: CityBlock[];
     buildings: BuildingInfo[];
     landmarks: LandmarkInfo[];
     trees: TreeObject[];

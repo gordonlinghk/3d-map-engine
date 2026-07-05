@@ -14,10 +14,21 @@ export type ToolbarProps = {
   onTourToggle?: () => void;
   tourActive?: boolean;
   onReset?: () => void;
+  /** Regenerate the world with an explicit seed + preset. */
+  onGenerate?: (seed: string, preset: string) => void;
 };
 
-export function Toolbar({ onTourToggle, tourActive, onReset }: ToolbarProps) {
-  const { renderer } = useAtlas();
+const PRESET_OPTIONS = [
+  { id: 'coastal-tech-city', label: 'Coastal Tech City' },
+  { id: 'island-city', label: 'Island City' },
+  { id: 'downtown-night-grid', label: 'Downtown Night Grid' },
+];
+
+export function Toolbar({ onTourToggle, tourActive, onReset, onGenerate }: ToolbarProps) {
+  const { renderer, world } = useAtlas();
+  const [worldOpen, setWorldOpen] = useState(false);
+  const [seedDraft, setSeedDraft] = useState(world.seed);
+  const [presetDraft, setPresetDraft] = useState<string>(world.config.preset);
   const cameraMode = useAtlasStore((s) => s.cameraMode);
   const setCameraMode = useAtlasStore((s) => s.setCameraMode);
   const environment = useAtlasStore((s) => s.environment);
@@ -103,7 +114,70 @@ export function Toolbar({ onTourToggle, tourActive, onReset }: ToolbarProps) {
         >
           ▤
         </button>
+        <button
+          title="World (preset & seed)"
+          data-testid="world-toggle"
+          className={worldOpen ? 'active' : ''}
+          onClick={() => setWorldOpen((v) => !v)}
+        >
+          🌍
+        </button>
       </div>
+      {worldOpen && (
+        <div
+          data-testid="world-panel"
+          style={{
+            background: 'var(--panel-bg)',
+            borderRadius: 12,
+            boxShadow: 'var(--shadow)',
+            padding: '12px 14px',
+            display: 'grid',
+            gap: 8,
+            fontSize: 13,
+            width: 220,
+          }}
+        >
+          <label style={{ display: 'grid', gap: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>PRESET</span>
+            <select
+              data-testid="world-preset"
+              value={presetDraft}
+              onChange={(e) => setPresetDraft(e.target.value)}
+              style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)' }}
+            >
+              {PRESET_OPTIONS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: 'grid', gap: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>SEED</span>
+            <input
+              data-testid="world-seed"
+              value={seedDraft}
+              onChange={(e) => setSeedDraft(e.target.value)}
+              style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)' }}
+            />
+          </label>
+          <button
+            data-testid="world-generate"
+            onClick={() => onGenerate?.(seedDraft.trim() || world.seed, presetDraft)}
+            style={{
+              padding: '8px',
+              border: 'none',
+              borderRadius: 9,
+              background: 'var(--accent)',
+              color: '#fff',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Generate world
+          </button>
+        </div>
+      )}
       {layersOpen && (
         <div
           data-testid="layers-panel"

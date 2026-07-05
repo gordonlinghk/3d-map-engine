@@ -10,6 +10,7 @@ export const TOGGLABLE_LAYERS: MapLayerId[] = [
   'buildings',
   'landmarks',
   'trees',
+  'traffic',
 ];
 
 export type AtlasUiState = {
@@ -50,6 +51,7 @@ export const useAtlasStore = create<AtlasUiState>((set) => ({
     landmarks: true,
     trees: true,
     labels: true,
+    traffic: true,
   },
   setSelectedId: (selectedId) => set({ selectedId }),
   setHoveredId: (hoveredId) => set({ hoveredId }),
