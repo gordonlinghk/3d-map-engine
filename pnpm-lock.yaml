@@ -61,6 +61,9 @@ importers:
       '@map-engine/core':
         specifier: workspace:*
         version: link:../core
+      '@map-engine/historical':
+        specifier: workspace:*
+        version: link:../historical
       '@map-engine/osm':
         specifier: workspace:*
         version: link:../osm
@@ -101,6 +104,12 @@ importers:
       vite:
         specifier: ^7.0.0
         version: 7.3.6(@types/node@24.13.2)(tsx@4.23.0)
+
+  packages/historical:
+    dependencies:
+      '@map-engine/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/osm:
     dependencies:

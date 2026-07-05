@@ -488,7 +488,8 @@ on(event, handler): off             onFrame(cb): off           dispose()</code><
   <tr><td><code>world</code></td><td>URL(相對或絕對)</td><td>載入預烘焙的序列化 MapWorld JSON(<code>pnpm bake</code> 產物;失敗退回程序生成)</td></tr>
   <tr><td><code>cityName</code></td><td>任意字串</td><td>配合 <code>bbox</code> 的顯示名稱</td></tr>
   <tr><td><code>geo</code></td><td><code>mock</code></td><td>城市搜尋改用離線 mock provider(開發/離線用)</td></tr>
-  <tr><td><code>flat</code></td><td><code>1</code></td><td>真實城市不套用真實高程(退回平地;高程抓取失敗亦自動退回)</td></tr>
+  <tr><td><code>flat</code></td><td><code>1</code></td><td>真實城市/歷史地圖不套用真實高程(退回平地;高程抓取失敗亦自動退回)</td></tr>
+  <tr><td><code>map</code></td><td><code>three-kingdoms</code></td><td>內建歷史地圖(<code>@map-engine/historical</code> 的 HISTORICAL_MAPS registry)</td></tr>
   <tr><td><code>q</code></td><td><code>high</code> | <code>low</code></td><td>渲染品質強制(否則 webdriver→low)</td></tr>
 </table>
 

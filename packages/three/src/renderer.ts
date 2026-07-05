@@ -173,10 +173,16 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
     environment = mode;
     const water = layerGroups.get('water') as THREE.Mesh | undefined;
     const waterMat = water?.material as THREE.MeshPhongMaterial | undefined;
+    // Fog distances are tuned for ~1.6 km city worlds; strategy-scale worlds
+    // (e.g. historical China) are far larger — scale so they stay visible.
+    const worldHalf = currentWorld
+      ? (currentWorld.config.chunksX * currentWorld.config.chunkSize) / 2
+      : 800;
+    const fogScale = Math.max(1, worldHalf / 800);
     switch (mode) {
       case 'day': {
         scene.background = new THREE.Color('#cfe3f5');
-        scene.fog = new THREE.Fog(0xcfe3f5, 800, 3600);
+        scene.fog = new THREE.Fog(0xcfe3f5, 800 * fogScale, 3600 * fogScale);
         hemi.color.set('#ffffff');
         hemi.groundColor.set('#687a8c');
         hemi.intensity = 0.9;
@@ -191,7 +197,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       }
       case 'golden-hour': {
         scene.background = new THREE.Color('#ecc9a0');
-        scene.fog = new THREE.Fog(0xecc9a0, 450, 2600);
+        scene.fog = new THREE.Fog(0xecc9a0, 450 * fogScale, 2600 * fogScale);
         hemi.color.set('#ffe3c2');
         hemi.groundColor.set('#8a7a68');
         hemi.intensity = 0.65;
@@ -206,7 +212,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       }
       case 'night': {
         scene.background = new THREE.Color('#0d1120');
-        scene.fog = new THREE.Fog(0x0d1120, 500, 3000);
+        scene.fog = new THREE.Fog(0x0d1120, 500 * fogScale, 3000 * fogScale);
         hemi.color.set('#8b9cc4');
         hemi.groundColor.set('#1a2233');
         hemi.intensity = 0.45;

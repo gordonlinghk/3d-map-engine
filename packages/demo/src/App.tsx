@@ -33,6 +33,7 @@ import {
 import type { BBox, GeocodingProvider } from '@map-engine/osm';
 import { getStoredApiKey, promptToDirectives, storeApiKey } from './promptToMap';
 import { applyTerrainToWorld, fetchElevationGrid } from '@map-engine/terrain';
+import { HISTORICAL_MAPS, historicalToWorld } from '@map-engine/historical';
 import { saveDraftFile, stashPendingDraft, takePendingDraft } from './drafts';
 
 const DEFAULT_SEED = 'sf-atlas-001';
@@ -161,6 +162,7 @@ export function App() {
       const params = new URLSearchParams(window.location.search);
       const city = resolveCityFromUrl(params);
       const worldUrl = params.get('world');
+      const historicalMap = HISTORICAL_MAPS[params.get('map') ?? ''];
       const pendingDraft = takePendingDraft(window.location.search);
 
       let world: MapWorld;
@@ -176,6 +178,31 @@ export function App() {
         world = generateWorld(pendingDraft.base.seed, applyDirectives(d).config);
         base = pendingDraft.base;
         if (d.environment) env = d.environment;
+      } else if (historicalMap) {
+        // Bundled historical map (strategy scale, real terrain).
+        setLoadingText(`重建${historicalMap.name}…`);
+        let elevation: ((lat: number, lon: number) => number) | undefined;
+        if (!params.has('flat')) {
+          try {
+            const grid = await fetchElevationGrid(historicalMap.bbox, {
+              maxTiles: 30,
+              signal: bootAbort.signal,
+            });
+            if (disposed) return;
+            elevation = grid.sample;
+          } catch (err) {
+            if ((err as Error)?.name === 'AbortError' || disposed) return;
+            console.warn('Elevation unavailable — flat historical map', err);
+          }
+        }
+        world = historicalToWorld(historicalMap, { elevation });
+        base = {
+          kind: 'imported',
+          sourceSlug: `hist:${historicalMap.id}`,
+          sourceName: historicalMap.name,
+          snapshot: serializeMap(world),
+        };
+        env = params.get('env') ? env : 'golden-hour';
       } else if (worldUrl) {
         // Pre-baked world file (see `pnpm bake`) — a full serialized MapWorld.
         setLoadingText('Loading baked world…');
@@ -352,6 +379,9 @@ export function App() {
         } else if (draft.base.sourceSlug.startsWith('url:')) {
           // Pre-baked world file.
           url.searchParams.set('world', draft.base.sourceSlug.slice(4));
+        } else if (draft.base.sourceSlug.startsWith('hist:')) {
+          // Bundled historical map.
+          url.searchParams.set('map', draft.base.sourceSlug.slice(5));
         } else {
           url.searchParams.set('city', draft.base.sourceSlug);
         }
@@ -399,6 +429,12 @@ export function App() {
   const loadCity = (slug: string): void => {
     const url = new URL(window.location.origin + window.location.pathname);
     url.searchParams.set('city', slug);
+    window.location.href = url.toString();
+  };
+
+  const loadHistorical = (slug: string): void => {
+    const url = new URL(window.location.origin + window.location.pathname);
+    url.searchParams.set('map', slug);
     window.location.href = url.toString();
   };
 
@@ -481,6 +517,8 @@ export function App() {
           cityOptions={Object.values(CITY_PRESETS).map((c) => ({ slug: c.slug, name: c.name }))}
           onSearchCities={searchCities}
           onSelectCity={selectCity}
+          historicalOptions={Object.values(HISTORICAL_MAPS).map((m) => ({ slug: m.id, name: m.name }))}
+          onLoadHistorical={loadHistorical}
           currentCityName={
             engine.world.id.startsWith('osm:') ? engine.world.id.slice(4) : undefined
           }

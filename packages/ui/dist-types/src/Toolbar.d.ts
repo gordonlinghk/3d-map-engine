@@ -20,7 +20,13 @@ export type ToolbarProps = {
     onSelectCity?: (candidate: CityCandidateLike, scale: number) => void;
     /** Name of the currently loaded real city, if any. */
     currentCityName?: string;
+    /** Bundled historical maps. */
+    historicalOptions?: Array<{
+        slug: string;
+        name: string;
+    }>;
+    onLoadHistorical?: (slug: string) => void;
     /** Building editor (enables the ✏️ toggle). */
     onEditModeToggle?: (enabled: boolean) => void;
 };
-export declare function Toolbar({ onTourToggle, tourActive, onReset, onGenerate, onPromptGenerate, initialApiKey, cityOptions, onLoadCity, onSearchCities, onSelectCity, currentCityName, onEditModeToggle, }: ToolbarProps): import("react").JSX.Element;
+export declare function Toolbar({ onTourToggle, tourActive, onReset, onGenerate, onPromptGenerate, initialApiKey, cityOptions, onLoadCity, onSearchCities, onSelectCity, currentCityName, historicalOptions, onLoadHistorical, onEditModeToggle, }: ToolbarProps): import("react").JSX.Element;

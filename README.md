@@ -41,6 +41,10 @@ pnpm bake --center 22.2818,114.1583 --size 4   # or an explicit centre / --bbox 
 
 The CLI splits the box into ~1.2 km tiles, fetches them sequentially with delays and retry/backoff, merges + dedupes, and writes a serialized `MapWorld` JSON (3×3 km Hong Kong ≈ 3,150 buildings, 7 MB, boots in ~1 s). Load it in the demo via `?world=<url>` (e.g. copy into `packages/demo/public/cities/`), or in your own app with `deserializeMap()` + `loadWorld()`. The tiled fetcher is also exported as `fetchOsmAreaTiled()` for programmatic baking. Sizes above 8 km are refused without `--force` — both the public Overpass server and a single-mesh renderer have limits; truly city-scale worlds need streaming/LOD (future work).
 
+### Historical maps ⚔️
+
+Pick **三國時代 · 中國** in the 🌍 World panel (or `?map=three-kingdoms`) for a strategy-scale (1 unit = 1 km) map of Three-Kingdoms-era China: ~50 hand-curated walled cities (魏/蜀/吳, searchable by their period names, each carrying sources and a confidence level — 史料明確/合理推定/示意), major rivers with period-corrected courses (the Yellow River takes its ancient northern outlet), historic routes like the 蜀道 draped over **real, exaggerated terrain** from the elevation provider. Borders and routes are deliberately stylized — the map is a grounded dramatization, not an academic reconstruction (see `map-data-sources-research.md`). The data pack lives in [`@map-engine/historical`](packages/historical) as typed, reviewable TypeScript.
+
 ### Prompt-to-map ✨
 
 Open the 🌍 World panel and describe a city in natural language (English or Chinese) — e.g. *"a mountainous island city at night with dense skyscrapers"* / *「黃昏的海灣城市,有大橋和密集高樓」*. Two modes:
@@ -73,6 +77,7 @@ Either way the result is a set of clamped `MapDirectives` (preset, environment, 
 | --- | --- | --- |
 | `@map-engine/core` | Data model, seeded RNG, noise, terrain/road/city generation, serialization | none (no DOM, no Three.js) |
 | `@map-engine/terrain` | Real-world elevation: terrarium DEM tiles (AWS) → chunk height grids | core |
+| `@map-engine/historical` | Hand-curated historical map packs (Three Kingdoms China) with provenance/confidence | core |
 | `@map-engine/three` | Three.js renderer adapter: meshes, camera rig, picking, highlights, environments, tour | three |
 | `@map-engine/ui` | React demo UI: search, list, info panel, toolbar, minimap, HUD | react, zustand, fuse.js |
 | `@map-engine/demo` | Vite app wiring everything together | all of the above |

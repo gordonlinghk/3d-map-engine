@@ -29,6 +29,9 @@ export type ToolbarProps = {
   onSelectCity?: (candidate: CityCandidateLike, scale: number) => void;
   /** Name of the currently loaded real city, if any. */
   currentCityName?: string;
+  /** Bundled historical maps. */
+  historicalOptions?: Array<{ slug: string; name: string }>;
+  onLoadHistorical?: (slug: string) => void;
   /** Building editor (enables the ✏️ toggle). */
   onEditModeToggle?: (enabled: boolean) => void;
 };
@@ -51,6 +54,8 @@ export function Toolbar({
   onSearchCities,
   onSelectCity,
   currentCityName,
+  historicalOptions,
+  onLoadHistorical,
   onEditModeToggle,
 }: ToolbarProps) {
   const editMode = useAtlasStore((s) => s.editMode);
@@ -277,6 +282,34 @@ export function Toolbar({
                   </select>
                 </label>
               )}
+            </>
+          )}
+
+          {onLoadHistorical && historicalOptions && historicalOptions.length > 0 && (
+            <>
+              <div style={{ borderTop: '1px solid rgba(0,0,0,0.08)', margin: '4px -14px 0' }} />
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>
+                  ⚔️ HISTORICAL
+                </span>
+                <select
+                  data-testid="historical-select"
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) onLoadHistorical(e.target.value);
+                  }}
+                  style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)' }}
+                >
+                  <option value="" disabled>
+                    Travel back in time…
+                  </option>
+                  {historicalOptions.map((m) => (
+                    <option key={m.slug} value={m.slug}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </>
           )}
 

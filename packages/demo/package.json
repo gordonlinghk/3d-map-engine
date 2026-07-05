@@ -18,7 +18,8 @@
     "react-dom": "^19.1.0",
     "three": "^0.180.0",
     "zustand": "^5.0.0",
-    "@map-engine/terrain": "workspace:*"
+    "@map-engine/terrain": "workspace:*",
+    "@map-engine/historical": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",
