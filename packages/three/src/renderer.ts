@@ -70,6 +70,8 @@ export interface ThreeMapRenderer {
   getObjectAnchor(objectId: string): { x: number; y: number; z: number } | null;
   getEnvironment(): EnvironmentMode;
   focusObject(objectId: string): Promise<void>;
+  /** Fly the camera to a world XZ position (terrain height is sampled). */
+  focusPoint(point: { x: number; z: number }, radius?: number): Promise<void>;
   setSelected(objectId: string | null): void;
   getSelected(): string | null;
   setHovered(objectId: string | null): void;
@@ -261,6 +263,13 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
     const point = info.position.clone();
     point.y += Math.min(info.height * 0.4, 30);
     await rig.focusOn(point, Math.max(info.radius, info.height * 0.3));
+  };
+
+  const focusPoint = async (point: { x: number; z: number }, radius = 60): Promise<void> => {
+    if (!currentWorld) return;
+    const ground = createWorldHeightSampler(currentWorld)(point.x, point.z);
+    const y = Math.max(ground, currentWorld.config.waterLevel) + 2;
+    await rig.focusOn(new THREE.Vector3(point.x, y, point.z), radius);
   };
 
   // --- Pointer interaction -----------------------------------------------------
@@ -474,6 +483,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
     getEnvironment: () => environment,
 
     focusObject,
+    focusPoint,
     setSelected,
     getSelected: () => selectedId,
     setHovered,

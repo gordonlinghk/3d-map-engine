@@ -476,6 +476,9 @@
 @media (max-width: 900px) {
   .atlas-side {
     width: min(300px, 82vw);
+    /* The open panel is a temporary overlay on small screens — it must sit
+       above the toolbar (z 26) or the toolbar intercepts taps on its rows. */
+    z-index: 27;
   }
   .atlas-search {
     width: auto;
@@ -615,4 +618,30 @@
   border: 1px solid rgba(0, 0, 0, 0.12);
   font-size: 11.5px;
   background: #fff;
+}
+
+/* Side panel list filter */
+.atlas-side-filter {
+  position: relative;
+  padding: 0 12px 8px;
+}
+.atlas-side-filter input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 28px 7px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  font-size: 12.5px;
+  background: #fff;
+}
+.atlas-side-filter button {
+  position: absolute;
+  right: 18px;
+  top: 4px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px;
 }

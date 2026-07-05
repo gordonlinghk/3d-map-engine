@@ -60,6 +60,8 @@ Either way the result is a set of clamped `MapDirectives` (preset, environment, 
 | Shift | Boost |
 | Double-click | Fly to object or point |
 | Click | Select building / landmark |
+| Click minimap | Jump the camera there |
+| Type in the list's filter box | Narrow the side-panel list live |
 | Esc | Clear selection / exit walk pointer-lock |
 | ⌘K / Ctrl-K | Focus search |
 

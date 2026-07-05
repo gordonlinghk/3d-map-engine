@@ -309,10 +309,10 @@ on(event, handler): off             onFrame(cb): off           dispose()</code><
   <tr><td><code>store.ts</code></td><td>zustand:selectedId / hoveredId / cameraMode / environment / chip / query / panelOpen / <strong>editMode</strong> / labelsVisible / layers。<code>context.tsx</code> 訂閱 renderer 事件回寫 store——<strong>3D 選取狀態與 UI 永遠同步的機制</strong>。</td></tr>
   <tr><td><code>entries.ts</code></td><td>搜尋/列表資料源 <code>buildAtlasEntries(world)</code>:公司樓(有 <code>metadata.company</code>)、public 建築、<strong>OSM 命名建築</strong>(<code>metadata.imported && tags 含 'Named'</code>)、地標、行政區。<code>filterEntries()</code> 處理 chips(All/分類/Landmarks/Unicorns)。</td></tr>
   <tr><td><code>SearchBar</code></td><td>Fuse.js 模糊搜尋(name/category/tags/description),⌘K 聚焦,↑↓ Enter 鍵盤導航,選中 → <code>setSelected + focusObject</code>。</td></tr>
-  <tr><td><code>SidePanel</code></td><td>列表 + chips;標題自適應(SF Tech Atlas / Island Atlas / OSM 城市名);OSM 世界顯示 © OpenStreetMap 署名(ODbL 要求,<strong>勿移除</strong>)。</td></tr>
+  <tr><td><code>SidePanel</code></td><td>列表 + chips + 即時文字過濾(name/category 子串,✕/Esc 清除;與 chip 過濾疊加);標題自適應(SF Tech Atlas / Island Atlas / OSM 城市名);OSM 世界顯示 © OpenStreetMap 署名(ODbL 要求,<strong>勿移除</strong>)。手機上面板開啟時 z-index 27 蓋過 toolbar(26),否則 toolbar 攔截面板右緣的點擊。</td></tr>
   <tr><td><code>InfoPanel</code> / <code>EditorPanel</code></td><td>右側面板二選一:非編輯模式顯示資訊(公司 metadata 格網 + Fly there);編輯模式顯示編輯器(undo/redo/add/name/floors/rotate/delete/export)。</td></tr>
   <tr><td><code>Toolbar</code></td><td>相機模式三鍵 + 工具格(環境循環/Tour/重生成/截圖/全螢幕/Home/圖層面板/🌍World 面板/✏️編輯)。World 面板含 preset+seed、真實城市下拉、✨prompt 輸入 + API key。<code>.shifted</code>(右側面板開啟時)= <code>right:328px; top:64px</code> 讓位。</td></tr>
-  <tr><td><code>MiniMap</code></td><td>168px canvas:底圖(chunk 高度取樣 + 主要道路)畫一次緩存;每 120ms 疊相機位置+視錐扇形+選中點。相機朝向由 quaternion 手算 forward 向量。</td></tr>
+  <tr><td><code>MiniMap</code></td><td>168px canvas:底圖(chunk 高度取樣 + 主要道路)畫一次緩存;每 120ms 疊相機位置+視錐扇形+選中點。相機朝向由 quaternion 手算 forward 向量。點擊 = 反算世界 XZ → <code>renderer.focusPoint({x,z})</code> 飛行跳轉(取樣地形高度,水面 clamp)。</td></tr>
   <tr><td><code>Hud</code> / <code>SelectedLabel</code></td><td>FPS、指南針(北=−Z);選中物件頂上的浮動 label(<code>projectToScreen</code> 每 40ms 更新)。</td></tr>
 </table>
 

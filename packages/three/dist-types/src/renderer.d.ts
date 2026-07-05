@@ -77,6 +77,11 @@ export interface ThreeMapRenderer {
     } | null;
     getEnvironment(): EnvironmentMode;
     focusObject(objectId: string): Promise<void>;
+    /** Fly the camera to a world XZ position (terrain height is sampled). */
+    focusPoint(point: {
+        x: number;
+        z: number;
+    }, radius?: number): Promise<void>;
     setSelected(objectId: string | null): void;
     getSelected(): string | null;
     setHovered(objectId: string | null): void;

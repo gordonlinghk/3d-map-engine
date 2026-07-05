@@ -25,6 +25,10 @@ export interface MapRendererLike {
     setEnvironment(mode: EnvironmentMode): void;
     setLayerVisibility(layer: MapLayerId, visible: boolean): void;
     focusObject(objectId: string): Promise<void>;
+    focusPoint(point: {
+        x: number;
+        z: number;
+    }, radius?: number): Promise<void>;
     projectToScreen(pos: {
         x: number;
         y: number;

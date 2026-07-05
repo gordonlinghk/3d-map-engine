@@ -136,9 +136,27 @@ export function MiniMap() {
     return off;
   }, [renderer, world]);
 
+  // Click-to-jump: invert the world→pixel mapping used for drawing.
+  const onClick = (e: React.MouseEvent<HTMLCanvasElement>): void => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - rect.left) / rect.width) * SIZE;
+    const py = ((e.clientY - rect.top) / rect.height) * SIZE;
+    const half = (world.config.chunksX * world.config.chunkSize) / 2;
+    const x = (px / SIZE) * 2 * half - half;
+    const z = (py / SIZE) * 2 * half - half;
+    void renderer.focusPoint({ x, z }, 60);
+  };
+
   return (
     <div className="atlas-minimap" data-testid="minimap">
-      <canvas ref={canvasRef} width={SIZE} height={SIZE} style={{ display: 'block' }} />
+      <canvas
+        ref={canvasRef}
+        width={SIZE}
+        height={SIZE}
+        style={{ display: 'block', cursor: 'pointer' }}
+        title="Click to jump there"
+        onClick={onClick}
+      />
     </div>
   );
 }

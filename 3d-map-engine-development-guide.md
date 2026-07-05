@@ -102,7 +102,7 @@
 - **易錯點**:Pages 剛啟用時 deploy 可能暫時性失敗(“try again later”);**同一 run 重跑會產生兩個同名 artifact 而再失敗——正確做法是 `gh workflow run` 觸發全新 run**。
 - **驗證**:CI 綠 + live URL 截圖。
 
-### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10
+### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10 → B11 → B12 → B13
 
 | 代號 | 內容 | 關鍵檔案 | 一句話要點 |
 |---|---|---|---|
@@ -118,6 +118,7 @@
 | B10 | 草稿檔 | `core/draft.ts`、`demo/drafts.ts`、`App.tsx` boot | `.mapdraft.json` = overlay + base 配方(procedural 存 seed/directives、OSM 內嵌快照);開檔 = sessionStorage 暫存(綁 URL、**保留不消費**,防 StrictMode double-mount)→ 導航 → boot 優先路徑 → `sanitizeOverlayForWorld` 漂移剔除 → 自動進編輯模式;存檔 FSA 覆寫(webdriver 一律下載) |
 | B11 | 城市搜尋 | `osm/geocode.ts`、`ui/CitySearch.tsx`、`App.tsx` | `GeocodingProvider` 抽象(預設 Photon 免 key;**Nominatim 政策禁 autocomplete 故不用**;mock provider 供離線)→ 候選(name/region/country/latlon/extent)→ `candidateToCityArea` 裁剪成 ~1.3×1.8km 視窗(整城 extent 會炸 Overpass)→ URL `?bbox=s,w,n,e&cityName=`(`parseBBoxSlug` 校驗)→ 復用 Overpass 流程;UI:400ms debounce、≥2 字元、AbortController+序號防過時、cache、鍵盤↑↓Enter;草稿 sourceSlug=`bbox:…` 相容 |
 | B12 | 大範圍烘焙 | `osm/bake.ts`、`scripts/bake-city.ts`、`App.tsx` | `pnpm bake --city/--center/--bbox --size N`:`splitBBox`(≤1.2km 磁磚)→ `fetchOsmAreaTiled`(1.5s 間隔、5/15/45s backoff×3)→ `mergeOsmResponses`(type+id 去重,跨界 way 重複)→ `osmToWorld` → JSON;demo `?world=<url>` 載入(失敗退回程序生成),草稿 sourceSlug=`url:…`;>8km 拒絕(除非 --force)。**坑:Node fetch 無預設 UA → Overpass 406**,fetchOsmArea 已固定送 UA(瀏覽器忽略)。實測 3km 香港:3,153 棟/7.2MB/boot 1s |
+| B13 | 列表過濾+小地圖跳轉 | `ui/SidePanel.tsx`、`ui/MiniMap.tsx`、`three/renderer.ts` | SidePanel 即時文字過濾(name/category、與 chip 疊加、✕/Esc 清除);renderer 新公開 `focusPoint({x,z}, radius?)`(地形高度取樣 + `rig.focusOn`);MiniMap onClick 反算 px→世界 XZ。**坑:手機上 toolbar(z-26)攔截面板右緣點擊 → 面板開啟時 z-27** |
 
 ---
 

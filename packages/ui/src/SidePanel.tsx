@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useAtlas } from './context';
 import { useAtlasStore } from './store';
 import { CATEGORY_CHIPS, filterEntries } from './entries';
@@ -11,10 +11,18 @@ export function SidePanel() {
   const selectedId = useAtlasStore((s) => s.selectedId);
   const panelOpen = useAtlasStore((s) => s.panelOpen);
   const setPanelOpen = useAtlasStore((s) => s.setPanelOpen);
+  const [filter, setFilter] = useState('');
 
   const companies = useMemo(() => entries.filter((e) => e.kind === 'company'), [entries]);
   const landmarks = useMemo(() => entries.filter((e) => e.kind === 'landmark'), [entries]);
-  const list = useMemo(() => filterEntries(entries, chip), [entries, chip]);
+  const list = useMemo(() => {
+    const byChip = filterEntries(entries, chip);
+    const q = filter.trim().toLowerCase();
+    if (!q) return byChip;
+    return byChip.filter(
+      (e) => e.name.toLowerCase().includes(q) || (e.category ?? '').toLowerCase().includes(q),
+    );
+  }, [entries, chip, filter]);
 
   if (!panelOpen) {
     return (
@@ -88,6 +96,30 @@ export function SidePanel() {
         ))}
       </div>
 
+      <div className="atlas-side-filter">
+        <input
+          data-testid="list-filter"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter list…"
+          aria-label="Filter the list"
+          autoComplete="off"
+          spellCheck={false}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setFilter('');
+          }}
+        />
+        {filter && (
+          <button
+            data-testid="list-filter-clear"
+            title="Clear filter"
+            onClick={() => setFilter('')}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
       <div className="atlas-list" data-testid="atlas-list">
         {list.map((e) => (
           <button
@@ -111,7 +143,7 @@ export function SidePanel() {
         ))}
         {list.length === 0 && (
           <div style={{ padding: 16, fontSize: 12.5, color: 'var(--text-dim)' }}>
-            No results in this category.
+            {filter.trim() ? `No results for “${filter.trim()}”.` : 'No results in this category.'}
           </div>
         )}
       </div>
