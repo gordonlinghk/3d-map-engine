@@ -12,6 +12,7 @@ import { buildStars } from './sky';
 import { createSimulationLayer, type SimulationLayer } from './simulation';
 import { createEmitter } from './events';
 import { createCameraRig } from './cameraRig';
+import { createColliderIndex } from './collision';
 import {
   buildPickableIndex,
   createHighlights,
@@ -387,6 +388,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       pickables = buildPickableIndex(world, landmarksGroup);
       highlights = createHighlights(scene);
       rig.setTerrain(createWorldHeightSampler(world), world.config.waterLevel);
+      rig.setColliders(createColliderIndex(world));
       applyEnvironment(environment);
       homeView();
       emitter.emit('world:loaded', { worldId: world.id });

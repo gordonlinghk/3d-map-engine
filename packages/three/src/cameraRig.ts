@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { HeightSampler } from '@map-engine/core';
+import type { ColliderIndex } from './collision';
 import type { CameraMode } from './renderer';
 
 const WALK_EYE_HEIGHT = 2.3;
@@ -11,6 +12,7 @@ export type CameraRig = {
   getMode(): CameraMode;
   setMode(mode: CameraMode): void;
   setTerrain(sampler: HeightSampler | null, waterLevel: number): void;
+  setColliders(index: ColliderIndex | null): void;
   goHome(homePos: THREE.Vector3, homeTarget: THREE.Vector3): void;
   /** Smoothly fly the camera to look at a point. Resolves when done. */
   focusOn(point: THREE.Vector3, radius: number): Promise<void>;
@@ -37,6 +39,9 @@ export function createCameraRig(
   let mode: CameraMode = 'orbit';
   let sampler: HeightSampler | null = null;
   let waterLevel = 0;
+  let colliders: ColliderIndex | null = null;
+  const PLAYER_RADIUS = 0.8;
+  let bobPhase = 0;
 
   // Free-look state (fly + walk).
   let yaw = 0;
@@ -143,14 +148,44 @@ export function createCameraRig(
       if (keys.has('KeyE')) move.y += 1;
       if (keys.has('KeyQ')) move.y -= 1;
     }
+    let moved = false;
     if (move.lengthSq() > 0) {
       move.normalize();
       const walkFactor = mode === 'walk' ? 0.25 : 1;
-      camera.position.addScaledVector(move, speed * walkFactor * dt);
+
+      if (mode === 'walk') {
+        const fromX = camera.position.x;
+        const fromZ = camera.position.z;
+        let toX = fromX + move.x * speed * walkFactor * dt;
+        let toZ = fromZ + move.z * speed * walkFactor * dt;
+        // Buildings and solid landmarks block movement (with wall sliding).
+        if (colliders) {
+          const r = colliders.resolveMovement(fromX, fromZ, toX, toZ, PLAYER_RADIUS);
+          toX = r.x;
+          toZ = r.z;
+        }
+        // The sea blocks walking; the beach is fine.
+        if (sampler && sampler(toX, toZ) < waterLevel - 0.45) {
+          if (sampler(toX, fromZ) >= waterLevel - 0.45) toZ = fromZ;
+          else if (sampler(fromX, toZ) >= waterLevel - 0.45) toX = fromX;
+          else {
+            toX = fromX;
+            toZ = fromZ;
+          }
+        }
+        moved = Math.hypot(toX - fromX, toZ - fromZ) > 1e-4;
+        if (moved) bobPhase += Math.hypot(toX - fromX, toZ - fromZ) * 0.55;
+        camera.position.x = toX;
+        camera.position.z = toZ;
+      } else {
+        camera.position.addScaledVector(move, speed * walkFactor * dt);
+      }
     }
 
     if (mode === 'walk') {
-      camera.position.y = groundAt(camera.position.x, camera.position.z) + WALK_EYE_HEIGHT;
+      const bob = moved ? Math.sin(bobPhase) * 0.055 : 0;
+      camera.position.y =
+        groundAt(camera.position.x, camera.position.z) + WALK_EYE_HEIGHT + bob;
     } else if (mode === 'fly') {
       // Never fly below the ground.
       const minY = groundAt(camera.position.x, camera.position.z) + 2;
@@ -205,6 +240,10 @@ export function createCameraRig(
     setTerrain(next, wl) {
       sampler = next;
       waterLevel = wl;
+    },
+
+    setColliders(index) {
+      colliders = index;
     },
 
     goHome(homePos, homeTarget) {
