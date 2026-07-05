@@ -10,6 +10,7 @@ export type AtlasUiState = {
     chip: CategoryChip;
     query: string;
     panelOpen: boolean;
+    editMode: boolean;
     labelsVisible: boolean;
     layers: Record<MapLayerId, boolean>;
     setSelectedId(id: string | null): void;
@@ -19,6 +20,7 @@ export type AtlasUiState = {
     setChip(chip: CategoryChip): void;
     setQuery(q: string): void;
     setPanelOpen(open: boolean): void;
+    setEditMode(v: boolean): void;
     setLabelsVisible(visible: boolean): void;
     setLayer(layer: MapLayerId, visible: boolean): void;
 };

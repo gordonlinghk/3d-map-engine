@@ -33,3 +33,23 @@ export type EngineContextValue = {
   renderer: MapRendererLike;
   world: MapWorld;
 };
+
+/** Structural interface of the building editor (implemented in @map-engine/three). */
+export interface BuildingEditorLike {
+  setEnabled(v: boolean): void;
+  getState(): { enabled: boolean; addMode: boolean; canUndo: boolean; canRedo: boolean; tick: number };
+  onChange(cb: () => void): () => void;
+  getBuilding(id: string): {
+    id: string;
+    name: string;
+    floors: number;
+    height: number;
+  } | null;
+  setFloors(id: string, floors: number): void;
+  rename(id: string, name: string, description?: string): void;
+  rotate(id: string, degrees: number): void;
+  deleteBuilding(id: string): void;
+  setAddMode(v: boolean): void;
+  undo(): void;
+  redo(): void;
+}

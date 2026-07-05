@@ -4,7 +4,9 @@ import { AtlasProvider } from './context';
 import { SearchBar } from './SearchBar';
 import { SidePanel } from './SidePanel';
 import { InfoPanel } from './InfoPanel';
+import { EditorPanel } from './EditorPanel';
 import { Toolbar, type ToolbarProps } from './Toolbar';
+import type { BuildingEditorLike } from './types';
 import { MiniMap } from './MiniMap';
 import { Hud } from './Hud';
 import { SelectedLabel } from './SelectedLabel';
@@ -22,9 +24,19 @@ function Hints() {
   );
 }
 
-export type AtlasUIProps = EngineContextValue & ToolbarProps;
+export type AtlasUIProps = EngineContextValue &
+  ToolbarProps & {
+    editor?: BuildingEditorLike;
+    onExportWorld?: () => void;
+  };
 
-export function AtlasUI({ renderer, world, ...toolbar }: AtlasUIProps) {
+function MaybeEditorPanel({ editor, onExport }: { editor?: BuildingEditorLike; onExport?: () => void }) {
+  const editMode = useAtlasStore((s) => s.editMode);
+  if (!editMode || !editor) return null;
+  return <EditorPanel editor={editor} onExport={onExport} />;
+}
+
+export function AtlasUI({ renderer, world, editor, onExportWorld, ...toolbar }: AtlasUIProps) {
   // On narrow screens start with the list collapsed so the map stays visible.
   useEffect(() => {
     if (window.innerWidth < 900) useAtlasStore.getState().setPanelOpen(false);
@@ -36,8 +48,12 @@ export function AtlasUI({ renderer, world, ...toolbar }: AtlasUIProps) {
         <SelectedLabel />
         <SidePanel />
         <SearchBar />
-        <Toolbar {...toolbar} />
+        <Toolbar
+          {...toolbar}
+          onEditModeToggle={editor ? (enabled) => editor.setEnabled(enabled) : undefined}
+        />
         <InfoPanel />
+        <MaybeEditorPanel editor={editor} onExport={onExportWorld} />
         <MiniMap />
         <Hud />
         <Hints />

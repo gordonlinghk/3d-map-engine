@@ -1,8 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { applyDirectives, generateWorld } from '@map-engine/core';
-import type { EnvironmentDirective, MapDirectives, MapPresetId, MapWorld } from '@map-engine/core';
-import { createThreeMapRenderer, createTour } from '@map-engine/three';
-import type { ThreeMapRenderer, Tour } from '@map-engine/three';
+import {
+  applyDirectives,
+  applyEditOverlay,
+  generateWorld,
+  overlayIsEmpty,
+  serializeMap,
+} from '@map-engine/core';
+import type {
+  EditOverlay,
+  EnvironmentDirective,
+  MapDirectives,
+  MapPresetId,
+  MapWorld,
+} from '@map-engine/core';
+import { createBuildingEditor, createThreeMapRenderer, createTour } from '@map-engine/three';
+import type { BuildingEditor, ThreeMapRenderer, Tour } from '@map-engine/three';
 import { AtlasUI, useAtlasStore } from '@map-engine/ui';
 import { CITY_PRESETS, fetchOsmArea, osmToWorld } from '@map-engine/osm';
 import { getStoredApiKey, promptToDirectives, storeApiKey } from './promptToMap';
@@ -11,6 +23,29 @@ const DEFAULT_SEED = 'sf-atlas-001';
 const DEFAULT_PRESET: MapPresetId = 'coastal-tech-city';
 const PRESETS: MapPresetId[] = ['coastal-tech-city', 'island-city', 'downtown-night-grid'];
 const ENVIRONMENTS: EnvironmentDirective[] = ['day', 'golden-hour', 'night'];
+
+function editsKey(worldId: string): string {
+  const cfg = new URLSearchParams(window.location.search).get('cfg') ?? '';
+  return `map-engine.edits.${worldId}|${cfg}`;
+}
+
+function loadOverlay(worldId: string): EditOverlay | undefined {
+  try {
+    const raw = localStorage.getItem(editsKey(worldId));
+    return raw ? (JSON.parse(raw) as EditOverlay) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveOverlay(worldId: string, overlay: EditOverlay): void {
+  try {
+    if (overlayIsEmpty(overlay)) localStorage.removeItem(editsKey(worldId));
+    else localStorage.setItem(editsKey(worldId), JSON.stringify(overlay));
+  } catch {
+    // Storage full/unavailable — edits stay in-memory for this session.
+  }
+}
 
 function decodeCfg(raw: string | null): MapDirectives {
   if (!raw) return {};
@@ -46,6 +81,7 @@ function readUrlParams(): {
 export function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const tourRef = useRef<Tour | null>(null);
+  const editorRef = useRef<BuildingEditor | null>(null);
   const [tourActive, setTourActive] = useState(false);
   const [ready, setReady] = useState(false);
   const [loadingText, setLoadingText] = useState('Generating a procedural city…');
@@ -96,12 +132,26 @@ export function App() {
       }
       if (disposed) return;
 
+      // Re-apply saved user edits for this world before first render.
+      const savedOverlay = loadOverlay(world.id);
+      if (savedOverlay) applyEditOverlay(world, savedOverlay);
+
       void renderer.loadWorld(world);
       renderer.setEnvironment(environment);
       useAtlasStore.getState().setEnvironment(environment);
       const tour = createTour(renderer, world);
       tourRef.current = tour;
-      (window as unknown as Record<string, unknown>).__mapEngine = { renderer, world, tour };
+      const editor = createBuildingEditor(renderer, world, {
+        initialOverlay: savedOverlay,
+        onOverlayChange: (overlay) => saveOverlay(world.id, overlay),
+      });
+      editorRef.current = editor;
+      (window as unknown as Record<string, unknown>).__mapEngine = {
+        renderer,
+        world,
+        tour,
+        editor,
+      };
       setEngine({ renderer, world });
     };
     void boot();
@@ -109,10 +159,22 @@ export function App() {
     return () => {
       disposed = true;
       tourRef.current?.stop();
+      editorRef.current?.dispose();
       renderer.dispose();
       setEngine(null);
     };
   }, []);
+
+  const exportWorld = (): void => {
+    const world = engine?.world;
+    if (!world) return;
+    const blob = new Blob([JSON.stringify(serializeMap(world))], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${world.id.replace(/[^a-z0-9-]+/gi, '-')}.map.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
 
   const toggleTour = (): void => {
     const tour = tourRef.current;
@@ -174,6 +236,8 @@ export function App() {
           world={engine.world}
           onReset={reset}
           onGenerate={generate}
+          editor={editorRef.current ?? undefined}
+          onExportWorld={exportWorld}
           onLoadCity={loadCity}
           cityOptions={Object.values(CITY_PRESETS).map((c) => ({ slug: c.slug, name: c.name }))}
           onPromptGenerate={generateFromPrompt}

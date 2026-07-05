@@ -21,6 +21,7 @@ export type AtlasUiState = {
   chip: CategoryChip;
   query: string;
   panelOpen: boolean;
+  editMode: boolean;
   labelsVisible: boolean;
   layers: Record<MapLayerId, boolean>;
   setSelectedId(id: string | null): void;
@@ -30,6 +31,7 @@ export type AtlasUiState = {
   setChip(chip: CategoryChip): void;
   setQuery(q: string): void;
   setPanelOpen(open: boolean): void;
+  setEditMode(v: boolean): void;
   setLabelsVisible(visible: boolean): void;
   setLayer(layer: MapLayerId, visible: boolean): void;
 };
@@ -42,6 +44,7 @@ export const useAtlasStore = create<AtlasUiState>((set) => ({
   chip: 'All',
   query: '',
   panelOpen: true,
+  editMode: false,
   labelsVisible: true,
   layers: {
     terrain: true,
@@ -60,6 +63,7 @@ export const useAtlasStore = create<AtlasUiState>((set) => ({
   setChip: (chip) => set({ chip }),
   setQuery: (query) => set({ query }),
   setPanelOpen: (panelOpen) => set({ panelOpen }),
+  setEditMode: (editMode) => set({ editMode }),
   setLabelsVisible: (labelsVisible) => set({ labelsVisible }),
   setLayer: (layer, visible) =>
     set((s) => ({ layers: { ...s.layers, [layer]: visible } })),

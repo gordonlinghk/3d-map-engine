@@ -22,6 +22,8 @@ export type ToolbarProps = {
   /** Real-world cities (OSM imports). */
   cityOptions?: Array<{ slug: string; name: string }>;
   onLoadCity?: (slug: string) => void;
+  /** Building editor (enables the ✏️ toggle). */
+  onEditModeToggle?: (enabled: boolean) => void;
 };
 
 const PRESET_OPTIONS = [
@@ -39,7 +41,10 @@ export function Toolbar({
   initialApiKey,
   cityOptions,
   onLoadCity,
+  onEditModeToggle,
 }: ToolbarProps) {
+  const editMode = useAtlasStore((s) => s.editMode);
+  const setEditMode = useAtlasStore((s) => s.setEditMode);
   const { renderer, world } = useAtlas();
   const [worldOpen, setWorldOpen] = useState(false);
   const [seedDraft, setSeedDraft] = useState(world.seed);
@@ -97,7 +102,10 @@ export function Toolbar({
   };
 
   return (
-    <div className={`atlas-toolbar${selectedId ? ' shifted' : ''}`} data-testid="toolbar">
+    <div
+      className={`atlas-toolbar${selectedId || editMode ? ' shifted' : ''}`}
+      data-testid="toolbar"
+    >
       <div className="atlas-modes" data-testid="camera-modes">
         {(['orbit', 'fly', 'walk'] as const).map((m) => (
           <button
@@ -154,6 +162,20 @@ export function Toolbar({
         >
           🌍
         </button>
+        {onEditModeToggle && (
+          <button
+            title="Edit buildings"
+            data-testid="edit-toggle"
+            className={editMode ? 'active' : ''}
+            onClick={() => {
+              const next = !editMode;
+              setEditMode(next);
+              onEditModeToggle(next);
+            }}
+          >
+            ✏️
+          </button>
+        )}
       </div>
       {worldOpen && (
         <div

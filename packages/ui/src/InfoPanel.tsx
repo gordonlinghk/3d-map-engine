@@ -8,6 +8,7 @@ type Cell = { label: string; value: string; wide?: boolean };
 export function InfoPanel() {
   const { renderer, world } = useAtlas();
   const selectedId = useAtlasStore((s) => s.selectedId);
+  const editMode = useAtlasStore((s) => s.editMode);
 
   const data = useMemo(() => {
     if (!selectedId) return null;
@@ -51,7 +52,7 @@ export function InfoPanel() {
     return null;
   }, [selectedId, world]);
 
-  if (!data || !selectedId) return null;
+  if (editMode || !data || !selectedId) return null;
 
   return (
     <div className="atlas-info" data-testid="info-panel">

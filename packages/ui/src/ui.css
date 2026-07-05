@@ -352,6 +352,8 @@
   z-index: 26;
 }
 .atlas-toolbar.shifted {
+  /* Drop below the search bar row so neither overlaps the panel or search. */
+  top: 64px;
   right: 328px;
 }
 .atlas-modes {

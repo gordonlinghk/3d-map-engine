@@ -46,6 +46,19 @@ export interface ThreeMapRenderer {
         x: number;
         y: number;
     }): MapObjectHit | null;
+    /** Raycast the terrain — returns the ground point under the pointer. */
+    pickGround(pointer: {
+        x: number;
+        y: number;
+    }): {
+        x: number;
+        y: number;
+        z: number;
+    } | null;
+    /** Rebuild building meshes + picking + collision after world edits. */
+    refreshBuildings(): void;
+    /** Pause camera controls and click-selection during editor drags. */
+    setEditorDragging(v: boolean): void;
     /** Project a world position to canvas pixel coordinates. */
     projectToScreen(pos: {
         x: number;

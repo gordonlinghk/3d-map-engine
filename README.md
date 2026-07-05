@@ -16,6 +16,10 @@ pnpm build        # production build of the demo
 
 Demo URL parameters: `?seed=<any-string>&preset=coastal-tech-city|island-city|downtown-night-grid&env=day|golden-hour|night&cfg=<base64url MapDirectives>`
 
+### Editor mode ✏️
+
+Toggle ✏️ in the toolbar: click a building to rename it, change floors, rotate (±15°), delete, or drag it to a new spot; use ＋ Add to place new buildings anywhere. Full undo/redo (100 steps). Edits are saved to localStorage per world and re-applied on reload; “Export world JSON” downloads the full serialized `MapWorld`. Works on procedural and OSM worlds alike.
+
 ### Real cities (OpenStreetMap) 🗺
 
 Pick a real city in the 🌍 World panel (or `?city=tokyo-shibuya|hong-kong-central|manhattan-midtown|london-city`). Building footprints, heights, road networks, parks and water are fetched live from the Overpass API and converted into a `MapWorld` by [`@map-engine/osm`](packages/osm) — real polygon buildings are extruded into a single merged mesh with per-face picking, named buildings are searchable, and cars drive the real streets. Data © OpenStreetMap contributors (ODbL). v1 limitations: flat terrain (no elevation), no multipolygon relations, coastal sea not reconstructed.

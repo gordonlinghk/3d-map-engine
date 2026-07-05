@@ -13,5 +13,7 @@ export type ToolbarProps = {
         name: string;
     }>;
     onLoadCity?: (slug: string) => void;
+    /** Building editor (enables the ✏️ toggle). */
+    onEditModeToggle?: (enabled: boolean) => void;
 };
-export declare function Toolbar({ onTourToggle, tourActive, onReset, onGenerate, onPromptGenerate, initialApiKey, cityOptions, onLoadCity, }: ToolbarProps): import("react").JSX.Element;
+export declare function Toolbar({ onTourToggle, tourActive, onReset, onGenerate, onPromptGenerate, initialApiKey, cityOptions, onLoadCity, onEditModeToggle, }: ToolbarProps): import("react").JSX.Element;

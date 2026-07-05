@@ -54,6 +54,12 @@ export interface ThreeMapRenderer {
   setEnvironment(mode: EnvironmentMode): void;
   setLayerVisibility(layer: MapLayerId, visible: boolean): void;
   pickObject(pointer: { x: number; y: number }): MapObjectHit | null;
+  /** Raycast the terrain — returns the ground point under the pointer. */
+  pickGround(pointer: { x: number; y: number }): { x: number; y: number; z: number } | null;
+  /** Rebuild building meshes + picking + collision after world edits. */
+  refreshBuildings(): void;
+  /** Pause camera controls and click-selection during editor drags. */
+  setEditorDragging(v: boolean): void;
   /** Project a world position to canvas pixel coordinates. */
   projectToScreen(pos: { x: number; y: number; z: number }): {
     x: number;
@@ -152,6 +158,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
   let highlights: Highlights | null = null;
   let hoveredId: string | null = null;
   let selectedId: string | null = null;
+  let editorDragging = false;
 
   const picker = createPicker(camera, renderer.domElement, () => ({
     buildings: buildingsResult,
@@ -268,7 +275,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
     if (!pointerDownPos) return;
     const moved = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
     pointerDownPos = null;
-    if (moved > 5 || e.button !== 0) return;
+    if (editorDragging || moved > 5 || e.button !== 0) return;
     // Treat as a click: select or clear.
     const hit = picker.pick(e.clientX, e.clientY);
     setSelected(hit ? hit.objectId : null);
@@ -415,6 +422,38 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
 
     pickObject(pointer: { x: number; y: number }): MapObjectHit | null {
       return picker.pick(pointer.x, pointer.y);
+    },
+
+    pickGround(pointer: { x: number; y: number }) {
+      const p = picker.pickGround(pointer.x, pointer.y);
+      return p ? { x: p.x, y: p.y, z: p.z } : null;
+    },
+
+    refreshBuildings(): void {
+      if (!currentWorld || !worldRoot || !landmarksGroup) return;
+      const old = buildingsResult;
+      if (old) {
+        worldRoot.remove(old.group);
+        disposeObject(old.group);
+      }
+      buildingsResult = buildBuildingsGroup(currentWorld);
+      buildingsResult.setNightMode(environment === 'night');
+      layerGroups.set('buildings', buildingsResult.group);
+      worldRoot.add(buildingsResult.group);
+      pickables = buildPickableIndex(currentWorld, landmarksGroup);
+      rig.setColliders(createColliderIndex(currentWorld));
+      // Re-apply (or clear) the selection highlight against fresh pickables.
+      if (selectedId && !pickables.has(selectedId)) {
+        setSelected(null);
+      } else {
+        highlights?.setSelected(selectedId ? (pickables.get(selectedId) ?? null) : null);
+      }
+      setHovered(null);
+    },
+
+    setEditorDragging(v: boolean): void {
+      editorDragging = v;
+      rig.orbit.enabled = !v && rig.getMode() === 'orbit';
     },
 
     projectToScreen(pos: { x: number; y: number; z: number }) {

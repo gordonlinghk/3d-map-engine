@@ -8,6 +8,17 @@ export { generateRoadGraph } from './roads';
 export { generateCity, type CityData, type TreeObject } from './city';
 export { COMPANIES, type CompanyInfo, type CompanyCategory } from './companies';
 export {
+  addBuildingToWorld,
+  applyEditOverlay,
+  emptyOverlay,
+  moveFootprint,
+  overlayIsEmpty,
+  removeBuildingFromWorld,
+  replaceBuildingInWorld,
+  rotateFootprint,
+  type EditOverlay,
+} from './edits';
+export {
   applyDirectives,
   parsePromptLocally,
   MAP_DIRECTIVES_JSON_SCHEMA,
