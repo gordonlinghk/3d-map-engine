@@ -56,10 +56,24 @@ test('walk mode: buildings block movement (no walking through walls)', async ({ 
 
   await page.locator('canvas').first().click({ position: { x: 700, y: 400 } });
   await page.keyboard.down('KeyW');
-  await page.waitForTimeout(1800);
+  // Hold W until the camera has clearly moved toward the wall (slow CI needs
+  // wall-clock time to produce frames), or give up after 12s.
+  const startZ = target.minZ - 12;
+  const deadline = Date.now() + 12_000;
+  let pos = { x: target.x, z: startZ };
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(400);
+    pos = await page.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cam = (window as any).__mapEngine.renderer.camera;
+      return { x: cam.position.x, z: cam.position.z };
+    });
+    if (pos.z > startZ + 6) break;
+  }
   await page.keyboard.up('KeyW');
-
-  const pos = await page.evaluate(() => {
+  // Let any in-flight frame settle, then take the final reading.
+  await page.waitForTimeout(300);
+  pos = await page.evaluate(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cam = (window as any).__mapEngine.renderer.camera;
     return { x: cam.position.x, z: cam.position.z };
@@ -71,5 +85,7 @@ test('walk mode: buildings block movement (no walking through walls)', async ({ 
   expect(inside, `camera ended inside footprint (z=${pos.z}, wall=${target.minZ})`).toBe(false);
   expect(pos.z).toBeLessThanOrEqual(target.minZ);
   // …but it must have moved toward the wall (not frozen in place).
-  expect(pos.z).toBeGreaterThan(target.minZ - 12);
+  expect(pos.z, 'camera never moved — input did not register').toBeGreaterThan(
+    target.minZ - 11.5,
+  );
 });

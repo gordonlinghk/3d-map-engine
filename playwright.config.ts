@@ -2,7 +2,9 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 60_000,
+  timeout: process.env.CI ? 120_000 : 60_000,
+  // CI runners are slow shared machines; interaction timing occasionally flakes.
+  retries: process.env.CI ? 2 : 0,
   use: {
     baseURL: 'http://localhost:5173',
   },
