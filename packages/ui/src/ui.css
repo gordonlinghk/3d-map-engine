@@ -476,10 +476,13 @@
     width: min(300px, 82vw);
   }
   .atlas-search {
-    width: calc(100vw - 190px);
-    left: auto;
-    right: 60px;
+    width: auto;
+    left: 56px;
+    right: 14px;
     transform: none;
+  }
+  .atlas-toolbar {
+    top: 62px;
   }
   .atlas-info {
     top: auto;

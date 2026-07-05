@@ -1,4 +1,5 @@
 import './ui.css';
+import { useEffect } from 'react';
 import { AtlasProvider } from './context';
 import { SearchBar } from './SearchBar';
 import { SidePanel } from './SidePanel';
@@ -24,6 +25,11 @@ function Hints() {
 export type AtlasUIProps = EngineContextValue & ToolbarProps;
 
 export function AtlasUI({ renderer, world, ...toolbar }: AtlasUIProps) {
+  // On narrow screens start with the list collapsed so the map stays visible.
+  useEffect(() => {
+    if (window.innerWidth < 900) useAtlasStore.getState().setPanelOpen(false);
+  }, []);
+
   return (
     <AtlasProvider renderer={renderer} world={world}>
       <div className="atlas-ui">

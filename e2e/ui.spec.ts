@@ -33,6 +33,10 @@ test('search returns results for AI and Landmark keywords', async ({ page }) => 
 
 test('category chips filter the list and clicking an item selects it', async ({ page }) => {
   await waitForWorld(page);
+  // On mobile the side panel starts collapsed.
+  if (await page.getByTestId('side-open').isVisible()) {
+    await page.getByTestId('side-open').click();
+  }
   await page.getByTestId('chip-AI').click();
   const list = page.getByTestId('atlas-list');
   await expect(list.getByText('Anthropic')).toBeVisible();
@@ -48,7 +52,8 @@ test('category chips filter the list and clicking an item selects it', async ({ 
   await expect(list.getByText('Golden Gate Bridge')).toBeVisible();
 });
 
-test('camera mode buttons and home/environment buttons work', async ({ page }) => {
+test('camera mode buttons and home/environment buttons work', async ({ page, viewport }) => {
+  const isNarrow = !!viewport && viewport.width < 900;
   await waitForWorld(page);
   await page.getByTestId('mode-fly').click();
   const mode = await page.evaluate(() =>
@@ -57,6 +62,7 @@ test('camera mode buttons and home/environment buttons work', async ({ page }) =
   expect(mode).toBe('fly');
   await page.getByTestId('env-toggle').click();
   await page.getByTestId('home').click();
-  await expect(page.getByTestId('minimap')).toBeVisible();
+  // The minimap is hidden on narrow viewports by design.
+  if (!isNarrow) await expect(page.getByTestId('minimap')).toBeVisible();
   await expect(page.getByTestId('fps')).toBeVisible();
 });

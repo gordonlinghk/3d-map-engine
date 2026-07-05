@@ -16,7 +16,8 @@ async function waitForWorld(page: Page): Promise<void> {
   await page.waitForTimeout(800);
 }
 
-test('fly mode moves the camera with WASD', async ({ page }) => {
+test('fly mode moves the camera with WASD', async ({ page, viewport }) => {
+  test.skip(!!viewport && viewport.width < 900, 'keyboard navigation is desktop-only');
   await waitForWorld(page);
   await page.getByTestId('mode-fly').click();
   const before = await page.evaluate(() => {
