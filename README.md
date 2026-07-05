@@ -49,6 +49,16 @@ Either way the result is a set of clamped `MapDirectives` (preset, environment, 
 | `@map-engine/ui` | React demo UI: search, list, info panel, toolbar, minimap, HUD | react, zustand, fuse.js |
 | `@map-engine/demo` | Vite app wiring everything together | all of the above |
 
+## Install (SDK)
+
+```bash
+npm install @map-engine/core @map-engine/three three
+# optional React UI:
+npm install @map-engine/ui   # + import '@map-engine/ui/index.css'
+```
+
+`three >= 0.170` and `react >= 18` are peer dependencies. Publishing: `pnpm release` locally, or push a `v*` tag (CI needs the `NPM_TOKEN` repo secret).
+
 ## SDK usage
 
 ```ts

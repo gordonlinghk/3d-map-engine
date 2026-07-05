@@ -11,6 +11,8 @@
   "scripts": {
     "dev": "pnpm --filter @map-engine/demo dev",
     "build": "pnpm --filter @map-engine/demo build",
+    "build:lib": "pnpm --filter '@map-engine/*' --filter '!@map-engine/demo' run build",
+    "release": "pnpm build:lib && pnpm -r --filter '!@map-engine/demo' publish --access public --no-git-checks",
     "preview": "pnpm --filter @map-engine/demo preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -23,6 +25,7 @@
     "@playwright/test": "^1.55.0",
     "@types/node": "^24.0.0",
     "eslint": "^9.30.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.35.0",
     "vitest": "^3.2.0"

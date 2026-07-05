@@ -1,21 +1,47 @@
 {
   "name": "@map-engine/ui",
   "version": "0.1.0",
+  "description": "React UI components for the map-engine demo — search, atlas list, info panel, toolbar, minimap, HUD. Talks to the renderer through a structural interface.",
+  "license": "MIT",
+  "author": "Gordon Ling",
+  "homepage": "https://gordonlinghk.github.io/3d-map-engine/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gordonlinghk/3d-map-engine.git",
+    "directory": "packages/ui"
+  },
+  "keywords": ["react", "3d", "map", "city", "ui"],
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
-  "sideEffects": false,
+  "files": ["dist", "LICENSE", "README.md"],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./index.css": "./dist/index.css"
+    }
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "sideEffects": ["*.css"],
   "dependencies": {
     "@map-engine/core": "workspace:*",
     "fuse.js": "^7.1.0",
     "zustand": "^5.0.0"
   },
   "peerDependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react": ">=18",
+    "react-dom": ">=18"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",

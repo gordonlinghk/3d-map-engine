@@ -1,18 +1,46 @@
 {
   "name": "@map-engine/three",
   "version": "0.1.0",
+  "description": "Three.js renderer adapter for @map-engine/core — terrain/building/road meshes, orbit/fly/walk cameras, picking, environments, traffic simulation, tour.",
+  "license": "MIT",
+  "author": "Gordon Ling",
+  "homepage": "https://gordonlinghk.github.io/3d-map-engine/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gordonlinghk/3d-map-engine.git",
+    "directory": "packages/three"
+  },
+  "keywords": ["threejs", "procedural-generation", "3d", "map", "city", "renderer"],
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
+  "files": ["dist", "LICENSE", "README.md"],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup"
+  },
   "sideEffects": false,
   "dependencies": {
-    "@map-engine/core": "workspace:*",
-    "three": "^0.180.0"
+    "@map-engine/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "three": ">=0.170.0"
   },
   "devDependencies": {
-    "@types/three": "^0.180.0"
+    "@types/three": "^0.180.0",
+    "three": "^0.180.0"
   }
 }
