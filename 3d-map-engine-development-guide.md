@@ -179,19 +179,19 @@ TypeScript 5.9 / Three.js 0.180(peer >=0.170)/ React 19 / Vite 7 / pnpm 11 works
 ```mermaid
 flowchart LR
   subgraph 來源
-    P[preset + seed] --> G[generateWorld]
-    NL[自然語言 prompt] --> D[MapDirectives<br/>applyDirectives] --> G
-    OSM[Overpass API] --> C[osmToWorld]
+    P["preset + seed"] --> G["generateWorld"]
+    NL["自然語言 prompt"] --> D["MapDirectives<br/>applyDirectives"] --> G
+    OSM["Overpass API"] --> C["osmToWorld"]
   end
-  G --> W[(MapWorld<br/>純資料)]
+  G --> W[("MapWorld<br/>純資料")]
   C --> W
-  OV[EditOverlay<br/>localStorage] -- applyEditOverlay --> W
-  W --> R[ThreeMapRenderer.loadWorld]
-  R --> L["layer groups:<br/>terrain/water/roads/buildings/<br/>trees/landmarks/traffic/stars"]
-  R -- events --> UI[AtlasUI (React+zustand)]
-  UI -- setSelected/focusObject/setEnvironment --> R
-  ED[BuildingEditor] -- 修改 --> W
-  ED -- refreshBuildings --> R
+  OV["EditOverlay<br/>localStorage"] -- "applyEditOverlay" --> W
+  W --> R["ThreeMapRenderer.loadWorld"]
+  R --> L["layer groups:<br/>terrain / water / roads / buildings /<br/>trees / landmarks / traffic / stars"]
+  R -- "events" --> UI["AtlasUI（React + zustand）"]
+  UI -- "setSelected / focusObject / setEnvironment" --> R
+  ED["BuildingEditor"] -- "修改" --> W
+  ED -- "refreshBuildings" --> R
 ```
 
 ### 4.3 renderer 內部分工(`three/src/`)
