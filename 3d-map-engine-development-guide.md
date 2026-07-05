@@ -1,9 +1,10 @@
 # 3D Map Engine 開發交接文檔
 
 > 交接對象:後續接手的 AI Agent / 開發者
-> 撰寫依據:2026-07-05 從零構建整個引擎的實際開發過程(git 歷史逐 commit 對應)
+> 撰寫依據:2026-07-05 ~ 07-06 從零構建整個引擎的實際開發過程(git 歷史逐 commit 對應)
 > 原始需求文檔:`3D Map Engine Plan.zip` 內的 `3d-map-engine-plan-v2-zh-Hant.md`(在 repo 根目錄,已 gitignore)
-> Live demo:https://gordonlinghk.github.io/3d-map-engine/
+> 配套文檔:`map-data-sources-research.md`(多來源選型調研)· `packages/demo/public/developer-guide.html`(給人類的技術手冊,隨 demo 部署)
+> Live demo:https://gordonlinghk.github.io/3d-map-engine/ (三國地圖:`?map=three-kingdoms`)
 > Repo:https://github.com/gordonlinghk/3d-map-engine
 
 ---
@@ -12,33 +13,38 @@
 
 ### 1.1 用途
 
-一個**可重用的程序生成 3D 城市地圖引擎**(Web / Three.js / TypeScript),不是遊戲、不是 GIS。產出形式:
+一個**可重用的多來源 3D 地圖引擎**(Web / Three.js / TypeScript),不是遊戲、不是 GIS。同一個渲染管線消費四類世界:程序生成城市、OSM 真實城市(任意城市可搜尋)、預烘焙大範圍世界、歷史戰略地圖(首張:三國中國)。產出形式:
 
 - 可嵌入其他 Web 應用或遊戲原型的 **SDK**(monorepo 內以 `workspace:*` 消費;npm 發佈基建已就緒但**刻意擱置**,見 §7.4)
-- 一個可在瀏覽器操作的 **3D city atlas demo**(GitHub Pages 自動部署)
-- 可序列化/反序列化的**地圖資料格式**(JSON-safe)
+- 一個可在瀏覽器操作的 **3D atlas demo**(GitHub Pages 自動部署)
+- 可序列化/反序列化的**地圖資料格式**(JSON-safe;`MapWorld` 是所有來源的統一 schema)
 
 ### 1.2 核心功能範圍(全部已實作)
 
 | 功能塊 | 內容 |
 |---|---|
-| 程序生成 | seed 決定一切;3 個 preset(coastal-tech-city / island-city / downtown-night-grid);地形、道路網、~2000 棟建築、地標、樹木 |
-| 互動 | Orbit / Fly / Walk 三相機模式(Walk 含建築碰撞)、raycast 選取、hover/selected 高亮、focus 飛行 |
-| Demo UI | 模糊搜尋(⌘K)、公司/地標列表 + 分類 chips、資訊面板、工具列、迷你地圖、FPS/指南針 HUD |
-| 環境 | Day / Golden Hour / Night(含 shadow mapping、夜間發光窗、街燈、星空)、Tour 自動巡覽、圖層開關 |
-| 模擬層 | ~150 架車沿道路圖行駛、渡輪往返、飛機 |
-| Prompt-to-map | 自然語言 → MapDirectives → MapConfig;Claude API(用戶自帶 key)+ 本地關鍵詞解析 fallback |
-| OSM 真實城市 | Overpass API 抓取 → MapWorld;4 個城市預設(中環/澀谷/曼哈頓中城/倫敦金融城) |
-| 編輯器 | 拖曳移動、樓高、旋轉、增刪建築、undo/redo、localStorage 持久化、匯出 JSON |
+| 程序生成 | seed 決定一切;3 個 preset;地形、道路網、~2000 棟建築、地標、樹木 |
+| 互動 | Orbit / Fly / Walk(Walk 含碰撞)、raycast 選取、高亮、focus 飛行、`focusPoint` 任意座標跳轉 |
+| Demo UI | 模糊搜尋(⌘K)、列表 + chips + **即時文字過濾**、資訊面板、工具列、**可點擊跳轉的迷你地圖**、HUD |
+| 環境 | Day / Golden Hour / Night(shadow、夜窗、街燈、星空;**霧距按世界尺寸縮放**)、Tour、圖層開關 |
+| 模擬層 | 車沿道路圖行駛、渡輪、飛機 |
+| Prompt-to-map | 自然語言 → MapDirectives → MapConfig;Claude API(用戶自帶 key)+ 本地關鍵詞 fallback |
+| OSM 真實城市 | **任意城市搜尋**(Photon geocoding + AREA 1×/2×/3×)+ 4 個精選;Overpass(單發/分塊)→ MapWorld |
+| 真實高程 | terrarium DEM → chunk 高度;建築沉降、湖床壓平、**海面自動出現**(維港);城市與歷史地圖通用 |
+| 大範圍烘焙 | `pnpm bake` CLI:分塊限速抓取(≤8km)→ MapWorld JSON;demo `?world=<url>` 載入 |
+| 歷史地圖 | `?map=three-kingdoms`:戰略尺度(1 unit=1km)三國中國;~50 考據城池(confidence 三級+出處)、勢力、古河道、要道 |
+| 編輯器 | 拖曳移動、樓高、旋轉、增刪、undo/redo、localStorage autosave、匯出 JSON——對全部世界類型可用 |
+| 草稿檔 | `.mapdraft.json` 可攜帶續編草稿(overlay+base 配方/快照);FSA 覆寫存檔;跨機器 |
 
 ### 1.3 接手前必須理解的前提(硬性規則)
 
-1. **`@map-engine/core` 絕對不可依賴 Three.js、React 或 DOM。** 它只有純資料與生成邏輯。這是整個架構的地基。
-2. **所有程序生成必須 deterministic**:同 seed + config 永遠產生 byte 級相同的世界。任何生成路徑禁止用 `Math.random()` / `Date.now()`,一律經 `createRng(seed)` 及其 `fork(label)`。
-3. **渲染 mesh 不屬於核心資料模型。** `MapWorld` 只有資料;`@map-engine/three` 負責把資料變成可視物件。
-4. **所有可互動物件必須有穩定 `id` + metadata**(建築 id 為格網座標式 `bldg:{i},{j}:{li},{lj}`,OSM 為 `bldg:osm:{wayId}`,用戶新增為 `bldg:user:{n}`)。
+1. **`@map-engine/core` 絕對不可依賴 Three.js、React 或 DOM。** 純資料與生成邏輯。這是整個架構的地基。
+2. **所有程序生成必須 deterministic**:同 seed + config 永遠產生 byte 級相同的世界。生成路徑禁 `Math.random()` / `Date.now()`,一律經 `createRng(seed)` 及其 `fork(label)`。(網絡來源——OSM/DEM——的世界以「烘焙/快照凍結」達成可重現。)
+3. **渲染 mesh 不屬於核心資料模型。** `MapWorld` 只有資料;`@map-engine/three` 把資料變成可視物件。**任何新資料來源的本質工作 = 寫一個 `X → MapWorld` 轉換器**,渲染層零改動(osm/terrain/historical 三個包都是這個模式)。
+4. **所有可互動物件必須有穩定 `id` + metadata**(程序 `bldg:{i},{j}:{li},{lj}`、OSM `bldg:osm:{wayId}`、用戶 `bldg:user:{n}`、歷史 `city:{map}:{cityId}`)。
 5. **每完成一個階段都要有可運行 demo + 測試**,優先可操作成果,不做過度抽象。
-6. Demo 用**真實公司公開資料**(文字,無 logo)——這是用戶明確授權的決定。
+6. Demo 用**真實公司公開資料**(文字,無 logo)——用戶明確授權的決定。
+7. **資料授權紅線**(詳見 `map-data-sources-research.md`):Google/Mapbox/HERE 的 ToS **禁止**「抓取→轉自有格式→保存」,不可接入;CHGIS **禁止再散布**,只可作查證參考;開放資料的署名義務經 `world.attribution` 欄位落實(SidePanel 自動渲染,勿繞過)。歷史資料一律帶 confidence(attested/inferred/stylized)與出處,**不把推測當史實**。
 
 ---
 
@@ -49,7 +55,7 @@
 ### Phase 1:專案骨架
 
 - **目的**:monorepo + 工具鏈 + 空 Three.js 場景,建立「每步皆可驗證」的基礎。
-- **做了什麼**:pnpm workspace(`packages/core|three|ui|demo`)、TypeScript project references(`tsconfig.base.json` + 各包 composite tsconfig)、ESLint flat config、Vitest、Playwright(desktop 1440×900 / large 1920×1080 / mobile 390×844 三個 project)、Vite + React demo 顯示空場景 + FPS。
+- **做了什麼**:pnpm workspace(`packages/core|three|ui|demo`,後續增 `osm|terrain|historical`)、TypeScript project references(`tsconfig.base.json` + 各包 composite tsconfig)、ESLint flat config、Vitest、Playwright(desktop 1440×900 / large 1920×1080 / mobile 390×844 三個 project)、Vite + React demo 顯示空場景 + FPS。
 - **關鍵細節**:
   - 各 library package 的 `main`/`exports` **直接指向 `src/index.ts`**——開發期由 Vite/Vitest 直接編譯源碼,無 build step。發佈欄位由 `publishConfig` 在 pack 時替換(見 B8)。
   - pnpm 11 會攔截依賴的 build scripts:`pnpm-workspace.yaml` 需要 `allowBuilds: { esbuild: true }`。
@@ -75,13 +81,13 @@
 
 ### Phase 4:建築與地標
 
-- **做了什麼**:`core/companies.ts`(28 家真實 SF 公司資料)、`core/city.ts`(街區分類 downtown/commercial/residential/waterfront/park → 分 lot 生成建築 → 高度按離市中心衰減 → 公司分配到最高的辦公樓;地標:金門橋/Alcatraz/Sutro Tower/Coit Tower/Oracle Park/Ferry Building;樹木散佈)、`three/buildingsMesh.ts`(**4 個高度等級各一個 InstancedMesh**,程序生成 CanvasTexture 窗戶貼圖,等級化避免窗戶拉伸)、`treesMesh.ts`(instanced)、`landmarksGroup.ts`(手工低模:吊橋塔+拋物線纜索、三腳電視塔、橢圓球場、鐘樓碼頭、監獄島)。
+- **做了什麼**:`core/companies.ts`(28 家真實 SF 公司資料)、`core/city.ts`(街區分類 → 分 lot 生成建築 → 高度按離市中心衰減 → 公司分配到最高辦公樓;地標:金門橋/Alcatraz/Sutro Tower/Coit Tower/Oracle Park/Ferry Building;樹木散佈)、`three/buildingsMesh.ts`(**4 個高度等級各一個 InstancedMesh**,程序生成 CanvasTexture 窗戶貼圖)、`treesMesh.ts`(instanced)、`landmarksGroup.ts`(手工低模)。
 - **易錯點**:吊橋纜索用 CatmullRom 會過衝成波浪,改**三段 QuadraticBezier**;球場 ExtrudeGeometry 的旋轉/平移順序容易弄反。
 - **驗證**:建築數量測試(>1200)、每物件有 id/name/position/type、chunk objectIds 不重複;近景截圖對照參考圖。
 
 ### Phase 5:互動控制
 
-- **做了什麼**:`three/cameraRig.ts`(orbit=OrbitControls;fly=drag-look + WASD/QE/Shift + 滾輪調速;walk=pointer lock + 貼地 + focus tween)、`three/interaction.ts`(instanced picking:`instanceId` → id 映射;高亮:hover 環+邊框、selected 脈動雙環)、`three/events.ts`(型別化 emitter),renderer 整合 click/dblclick/Esc/hover 節流。
+- **做了什麼**:`three/cameraRig.ts`(orbit=OrbitControls;fly=drag-look + WASD/QE/Shift + 滾輪調速;walk=pointer lock + 貼地 + focus tween)、`three/interaction.ts`(instanced picking:`instanceId` → id 映射;高亮)、`three/events.ts`(型別化 emitter),renderer 整合 click/dblclick/Esc/hover 節流。
 - **關鍵細節**:**rig 在 `setMode('walk'|'fly')` 時才從 camera quaternion 同步 yaw/pitch**。程式化控制相機朝向必須「先 lookAt、再 setMode」——反過來會被 pointer lock 的合成 pointermove 用舊角度覆蓋(CI 實際踩過,見 §5.5)。
 - **驗證**:e2e——WASD 位移、投影座標點擊選樓開面板、Esc 清除、focusObject 飛近地標。
 
@@ -99,10 +105,10 @@
 ### Phase 8:驗收、優化、部署
 
 - **做了什麼**:視覺回歸(canvas 像素變異數 > 閾值)、UI 區塊不重疊檢查、mobile 佈局(側欄預設收起);GitHub Actions:`deploy.yml`(test job:typecheck+lint+unit+e2e desktop/mobile → deploy job:`DEPLOY_BASE=/3d-map-engine/` build → Pages)。
-- **易錯點**:Pages 剛啟用時 deploy 可能暫時性失敗(“try again later”);**同一 run 重跑會產生兩個同名 artifact 而再失敗——正確做法是 `gh workflow run` 觸發全新 run**。
+- **易錯點**:Pages deploy 可能暫時性失敗(“try again later”,本項目發生過 3 次);**同一 run 重跑會產生兩個同名 artifact 而再失敗——正確做法是 `gh workflow run` 觸發全新 run**。
 - **驗證**:CI 綠 + live URL 截圖。
 
-### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10 → B11 → B12 → B13
+### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10 → B11 → B12 → B13 →(數據來源調研)→ A5 → B14
 
 | 代號 | 內容 | 關鍵檔案 | 一句話要點 |
 |---|---|---|---|
@@ -115,12 +121,13 @@
 | B8 | npm 基建 | 各包 `tsup.config.ts`/`tsconfig.build.json`/`publishConfig`、`release.yml` | 建置驗證過、**實際發佈擱置**(用戶決定) |
 | B7 | OSM | `packages/osm/*`、`buildingsMesh.ts`(多邊形路徑)、`flatAreas.ts` | 見 §6.4 |
 | B6 | 編輯器 | `core/edits.ts`、`three/editor.ts`、`ui/EditorPanel.tsx` | 見 §6.5 |
-| B10 | 草稿檔 | `core/draft.ts`、`demo/drafts.ts`、`App.tsx` boot | `.mapdraft.json` = overlay + base 配方(procedural 存 seed/directives、OSM 內嵌快照);開檔 = sessionStorage 暫存(綁 URL、**保留不消費**,防 StrictMode double-mount)→ 導航 → boot 優先路徑 → `sanitizeOverlayForWorld` 漂移剔除 → 自動進編輯模式;存檔 FSA 覆寫(webdriver 一律下載) |
-| B11 | 城市搜尋 | `osm/geocode.ts`、`ui/CitySearch.tsx`、`App.tsx` | `GeocodingProvider` 抽象(預設 Photon 免 key;**Nominatim 政策禁 autocomplete 故不用**;mock provider 供離線)→ 候選(name/region/country/latlon/extent)→ `candidateToCityArea` 裁剪成 ~1.3×1.8km 視窗(整城 extent 會炸 Overpass)→ URL `?bbox=s,w,n,e&cityName=`(`parseBBoxSlug` 校驗)→ 復用 Overpass 流程;UI:400ms debounce、≥2 字元、AbortController+序號防過時、cache、鍵盤↑↓Enter;草稿 sourceSlug=`bbox:…` 相容 |
-| B12 | 大範圍烘焙 | `osm/bake.ts`、`scripts/bake-city.ts`、`App.tsx` | `pnpm bake --city/--center/--bbox --size N`:`splitBBox`(≤1.2km 磁磚)→ `fetchOsmAreaTiled`(1.5s 間隔、5/15/45s backoff×3)→ `mergeOsmResponses`(type+id 去重,跨界 way 重複)→ `osmToWorld` → JSON;demo `?world=<url>` 載入(失敗退回程序生成),草稿 sourceSlug=`url:…`;>8km 拒絕(除非 --force)。**坑:Node fetch 無預設 UA → Overpass 406**,fetchOsmArea 已固定送 UA(瀏覽器忽略)。實測 3km 香港:3,153 棟/7.2MB/boot 1s |
-| B13 | 列表過濾+小地圖跳轉 | `ui/SidePanel.tsx`、`ui/MiniMap.tsx`、`three/renderer.ts` | SidePanel 即時文字過濾(name/category、與 chip 疊加、✕/Esc 清除);renderer 新公開 `focusPoint({x,z}, radius?)`(地形高度取樣 + `rig.focusOn`);MiniMap onClick 反算 px→世界 XZ。**坑:手機上 toolbar(z-26)攔截面板右緣點擊 → 面板開啟時 z-27** |
-| B14 | 三國 MVP | `packages/historical/*`、`App.tsx`、`Toolbar.tsx`、`renderer.ts`(fog) | 戰略尺度 1 unit=1km;資料包 = TS 常量(~50 城 attested/inferred/stylized 三級 confidence + 出處;黃河走古北道);`historicalToWorld`:真實 DEM(z6,垂直 ×0.012 誇張)+ 風格化城池(主殿=可搜尋 entry,城牆 type residential 不進列表)+ 河流 ribbon 分段 carve + 路線→roadGraph;URL `?map=`;**坑:fog 距離按 800-half 城市世界調的 → `fogScale=max(1, half/800)`,3000-unit 世界否則全被霧吞** |
-| A5 | 真實高程 | `packages/terrain/*`、`App.tsx`、`bake-city.ts`、`flatAreas.ts` | terrarium DEM(AWS 免 key)→ `fetchElevationGrid`(zoom 按磁磚預算、瀏覽器 canvas 解碼/Node 注入 pngjs)→ `applyTerrainToWorld`:chunk 高度相對最低陸地、海(≤0.05m)→ −1.6 低於 waterLevel(**維港自動出現**)、水體下壓平湖床、建築沉至 footprint 最低點、道路節點重取樣(roadMesh/simulation/streetLights 自取樣自動跟隨);`world.attribution` 新 core 欄位 → SidePanel 渲染;`?flat=1`/`--flat` 退出、失敗退平地;**現有 OSM e2e 需 abort elevation route 防真網請求**。實測中環 −1.6~479.8m |
+| B10 | 草稿檔 | `core/draft.ts`、`demo/drafts.ts`、`App.tsx` boot | `.mapdraft.json` = overlay + base 配方(procedural 存 seed/directives、imported 內嵌快照);開檔 = sessionStorage 暫存(綁 URL、**保留不消費**,防 StrictMode double-mount)→ 導航 → boot 優先路徑 → `sanitizeOverlayForWorld` 漂移剔除 → 自動進編輯模式;存檔 FSA 覆寫(webdriver 一律下載) |
+| B11 | 城市搜尋 | `osm/geocode.ts`、`ui/CitySearch.tsx`、`App.tsx` | `GeocodingProvider` 抽象(預設 Photon 免 key;**Nominatim 政策禁 autocomplete 故不用**;mock provider 供離線 `?geo=mock`)→ 候選 → `candidateToCityArea(c,{scale})` 裁剪成 1×/2×/3× 視窗(整城 extent 會炸 Overpass)→ URL `?bbox=s,w,n,e&cityName=`(`parseBBoxSlug` 校驗,每邊 ≤6.5km)→ 復用 Overpass 流程;UI:400ms debounce、≥2 字元、AbortController+序號防過時、cache、鍵盤↑↓Enter、AREA 選單;>1× 走 `fetchOsmAreaTiled` + 進度顯示;boot AbortController 貫穿取消(否則 StrictMode 棄置 boot 繼續背景抓磁磚);草稿 sourceSlug=`bbox:…` |
+| B12 | 大範圍烘焙 | `osm/bake.ts`、`scripts/bake-city.ts`、`App.tsx` | `pnpm bake --city/--center/--bbox --size N`:`splitBBox`(≤1.2km 磁磚)→ `fetchOsmAreaTiled`(1.5s 間隔、5/15/45s backoff×3、支援 AbortSignal)→ `mergeOsmResponses`(type+id 去重,跨界 way 重複)→ `osmToWorld` → JSON;demo `?world=<url>` 載入(失敗退回程序生成),草稿 sourceSlug=`url:…`;>8km 拒絕(除非 --force)。**坑:Node fetch 無預設 UA → Overpass 406**,fetchOsmArea 已固定送 UA(瀏覽器忽略)。實測 3km 香港:3,153 棟/7.2MB/boot 1s |
+| B13 | 列表過濾+小地圖跳轉 | `ui/SidePanel.tsx`、`ui/MiniMap.tsx`、`three/renderer.ts` | SidePanel 即時文字過濾(name/category、與 chip 疊加、✕/Esc 清除);renderer 新公開 `focusPoint({x,z}, radius?)`;MiniMap onClick 反算 px→世界 XZ。**坑:手機上 toolbar(z-26)攔截面板右緣點擊 → 面板開啟時 z-27** |
+| — | 數據來源調研 | `map-data-sources-research.md` | 多來源選型(無代碼變更):商業 API ToS 全禁提取;CHGIS 禁再散布;三國可行路徑 = 人工資料包 + 真實 DEM。**用戶定案:A5 → B14** |
+| A5 | 真實高程 | `packages/terrain/*`、`App.tsx`、`bake-city.ts`、`flatAreas.ts` | terrarium DEM(AWS 免 key,`h=R·256+G+B/256−32768`)→ `fetchElevationGrid`(zoom 按磁磚預算 ≤14、瀏覽器 canvas 解碼 / Node 注入 pngjs)→ `applyTerrainToWorld`:chunk 高度相對最低陸地、海(≤0.05m)→ −1.6 低於 waterLevel(**維港自動出現,v1 限制①③修復**)、水體下壓平湖床、建築沉至 footprint 最低點、道路節點重取樣(roadMesh/simulation/streetLights 自取樣自動跟隨);`world.attribution` 新 core 欄位 → SidePanel 渲染;`?flat=1`/`--flat` 退出、失敗退平地;**mock Overpass 的 e2e 必須 abort elevation route 防真網請求**。實測中環 −1.6~479.8m |
+| B14 | 三國 MVP | `packages/historical/*`、`App.tsx`、`Toolbar.tsx`、`renderer.ts`(fog) | 戰略尺度 **1 unit=1km**;資料包 = TS 常量(~50 城 attested/inferred/stylized 三級 confidence + 出處;黃河走古北道);`historicalToWorld`:真實 DEM(垂直 ×0.012 誇張、海→−2)+ 風格化城池(主殿=可搜尋 entry、category=勢力名;**城牆 type 必須 residential 否則塞爆列表**)+ 河流 ribbon 分段 carve + 路線→roadGraph;URL `?map=` + Toolbar ⚔️ select;草稿 sourceSlug=`hist:…`;**坑:fog 距離按 half=800 城市世界調的 → `fogScale=max(1, half/800)`,3000-unit 世界否則全被霧吞** |
 
 ---
 
@@ -132,45 +139,56 @@
 Phase 1 骨架 → Phase 2 RNG/資料 → Phase 3 地形/道路 → Phase 4 建築/地標
                                         ↘ Phase 5 互動(需要 picking 目標)
 Phase 5 → Phase 6 UI(消費 renderer 事件) → Phase 7 環境/巡覽 → Phase 8 部署
+後續:B7(OSM)是 B11/B12 的地基;A5(高程)是 B14(三國)的地基(真實地形)。
 ```
 
-後續迭代彼此獨立,但 **B7(OSM)依賴 B6 之前不存在的東西是錯覺——實際上 B6(編輯器)反而復用了 B7 建立的多邊形建築渲染路徑**(旋轉後的矩形 footprint 不再軸對齊 → 自動走 poly 管線)。
+後續迭代大致獨立,但注意兩個「復用鏈」:B6(編輯器)復用了 B7 建立的多邊形建築渲染路徑(旋轉後的矩形 footprint 不再軸對齊 → 自動走 poly 管線);B14 復用了 A5 的 `fetchElevationGrid` 與 B12 的「快照凍結」思路。
 
 ### 3.2 模組依賴圖
 
 ```mermaid
 graph TD
-  core["@map-engine/core<br/>(零依賴)"]
-  osm["@map-engine/osm"] --> core
+  core["@map-engine/core<br/>(零依賴;MapWorld 統一 schema)"]
+  osm["@map-engine/osm<br/>(Overpass/geocoding/烘焙)"] --> core
+  terrain["@map-engine/terrain<br/>(terrarium DEM)"] --> core
+  hist["@map-engine/historical<br/>(三國資料包)"] --> core
   three["@map-engine/three"] --> core
-  three -. peer .-> threejs[three.js]
+  three -. peer .-> threejs["three.js"]
   ui["@map-engine/ui"] --> core
-  ui -. peer .-> react[react]
+  ui -. peer .-> react["react"]
   ui -. "MapRendererLike<br/>(結構型,無 import)" .-> three
-  demo["@map-engine/demo (private)"] --> core & osm & three & ui
+  demo["@map-engine/demo (private)"] --> core & osm & terrain & hist & three & ui
   demo --> sdk["@anthropic-ai/sdk<br/>(prompt-to-map)"]
 ```
+
+**規律:資料來源包(osm/terrain/historical)只依賴 core、互不依賴**;需要組合時(例如三國 = historical + terrain 的 elevation sampler)由 demo/調用方注入函數,不建立包間依賴。
 
 ### 3.3 影響後續擴展的設計決策
 
 | 決策 | 影響 |
 |---|---|
-| `createWorldHeightSampler` 從 **chunk 高度網格雙線性取樣**(B7 改)而非重算地形函數 | 任何來源的世界(程序/OSM/未來高度圖匯入)道路、車流、Walk、地標朝向全部自動正確。**修改地形高度必須改 chunk heights,不能只改 sampler** |
+| `createWorldHeightSampler` 從 **chunk 高度網格雙線性取樣**而非重算地形函數 | 任何來源的世界(程序/OSM/烘焙/歷史)道路、車流、Walk、地標朝向全部自動正確。**修改地形高度必須改 chunk heights,不能只改 sampler**(A5 的 `applyTerrainToWorld` 正是這樣做) |
 | 建築渲染二分:軸對齊矩形 → InstancedMesh;任意多邊形 → 合併 ExtrudeGeometry + faceRanges picking | 新增建築形狀不用動 picking;但**編輯建築後必須呼叫 `renderer.refreshBuildings()`** |
-| UI 用結構型 `MapRendererLike` / `BuildingEditorLike` | 給 renderer/editor 加公開方法時,UI 若要用需同步擴充 `ui/src/types.ts` 的介面 |
+| UI 用結構型 `MapRendererLike` / `BuildingEditorLike` / `CityCandidateLike` | 給 renderer/editor 加公開方法時,UI 若要用需同步擴充 `ui/src/types.ts` 的介面 |
 | `MapLayerId` 是封閉 union(core/types.ts) | 新圖層要同時改:union、renderer `layerGroups`、ui `TOGGLABLE_LAYERS` + store `layers` 初始值 |
-| 世界重生成 = **整頁 URL 導航**(seed/preset/cfg/env/city 參數) | 分享性好、狀態簡單;代價是切換世界必全頁重載。若改成 in-place `loadWorld`,要處理 tour/editor/overlay 的重建 |
+| 世界身份 = **URL 參數**(`seed/preset/cfg/env` \| `city` \| `bbox+cityName` \| `world` \| `map`),boot 依此分支 | 分享性好、狀態簡單;**新增世界類型 = boot 加一個分支 + 草稿 sourceSlug 前綴映射(`bbox:`/`url:`/`hist:`)+ SidePanel isImported 判斷**。切換世界必全頁重載 |
 | 編輯以 **overlay**(modified/added/deleted)存,不存整個世界 | localStorage 體積小、同 seed 重生成可重放;**改了生成演算法會讓舊 overlay 的 modified 快照與新世界不一致**(快照直接覆蓋,通常可接受) |
+| 草稿檔 base 二分:procedural 存配方、imported 內嵌快照 | 網絡來源(OSM/DEM)會漂移,快照凍結是唯一可靠重現方式;開檔時 `sanitizeOverlayForWorld` 剔除失效引用 |
+| `world.attribution?: string[]`(core 可選欄位) | 資料來源的授權署名義務由資料層寫入、UI 層自動渲染;新來源接入時**必須**寫入其署名 |
+| 世界尺度不固定:城市世界 1 unit=1m,戰略世界 1 unit=1km | 渲染層大多尺度無關,但**調過的常數要注意**:fog 距離已按 `fogScale=max(1, worldHalf/800)` 縮放;相機 far=6000;道路寬度/物件尺寸由資料層按尺度給 |
 
 ### 3.4 改 X 會牽動 Y 速查表
 
 | 想改 | 會牽動 |
 |---|---|
-| `BuildingInfo` 欄位 | serialize 測試、`buildingsMesh`、`interaction.buildPickableIndex`、`collision`、`ui/entries`、`InfoPanel`、`editor`、OSM convert |
+| `BuildingInfo` 欄位 | serialize 測試、`buildingsMesh`、`interaction.buildPickableIndex`、`collision`、`ui/entries`、`InfoPanel`、`editor`、OSM convert、historical convert |
 | 地形形狀/preset | `terrain.ts` 遮罩、`world.test.ts` land-ratio 斷言、道路 `isLand` 判定、城市街區可建性、minimap 底圖 |
-| 道路圖結構 | `roadMesh`、`simulation`(車)、`streetLights`、OSM convert 的 road 映射 |
+| chunk 高度(任何來源) | 一切自動跟隨(sampler 派生):道路、車流、街燈、Walk、minimap;但**建築/樹的 `position.y` 是存量資料,要主動重取樣**(參考 `applyTerrainToWorld` Pass 4) |
+| 道路圖結構 | `roadMesh`、`simulation`(車)、`streetLights`、OSM convert、historical convert 的 route 映射 |
 | renderer 公開 API | `ThreeMapRenderer` 介面、`ui/types.ts` 的 `MapRendererLike`、demo `__mapEngine` 消費者(e2e 大量使用) |
-| 環境模式 | `applyEnvironment`(光/霧/水色)、`buildingsMesh.setNightMode`、`streetLights`、`stars`、`landmarksGroup.userData.setNight`、ui `ENV_ORDER` |
+| 環境模式 | `applyEnvironment`(光/霧/水色;注意 fogScale)、`buildingsMesh.setNightMode`、`streetLights`、`stars`、`landmarksGroup.userData.setNight`、ui `ENV_ORDER` |
+| URL 參數 scheme | boot 分支順序(pendingDraft > map > world > city/bbox > procedural)、`drafts.ts` 的 sourceSlug↔URL 映射、`editsKey`(含 cfg)、分享連結相容性 |
+| entries 收錄規則(`ui/entries.ts`) | 哪些建築進列表/搜尋:company metadata、type `public`、`imported`+tag `Named`。新來源的「可搜尋物件」要滿足其一;**不想進列表就避開這三者**(三國城牆用 type residential 的原因) |
 
 ---
 
@@ -178,38 +196,47 @@ graph TD
 
 ### 4.1 技術棧
 
-TypeScript 5.9 / Three.js 0.180(peer >=0.170)/ React 19 / Vite 7 / pnpm 11 workspace / Zustand 5 / Fuse.js 7 / Vitest 3 / Playwright 1.61 / tsup 8(發佈建置)/ @anthropic-ai/sdk(僅 demo)。
+TypeScript 5.9 / Three.js 0.180(peer >=0.170)/ React 19 / Vite 7 / pnpm 11 workspace / Zustand 5 / Fuse.js 7 / Vitest 3 / Playwright 1.61 / tsup 8(發佈建置)/ @anthropic-ai/sdk(僅 demo)/ tsx + pngjs(僅 CLI 腳本,root devDeps)。
 
 ### 4.2 核心資料流
 
 ```mermaid
 flowchart LR
-  subgraph 來源
+  subgraph 來源層
     P["preset + seed"] --> G["generateWorld"]
     NL["自然語言 prompt"] --> D["MapDirectives<br/>applyDirectives"] --> G
-    OSM["Overpass API"] --> C["osmToWorld"]
+    OSM["Overpass<br/>(單發或分塊)"] --> C["osmToWorld"]
+    DEM["terrarium DEM<br/>(AWS)"] --> T["applyTerrainToWorld<br/>(改 chunk 高度+沉降)"]
+    HD["三國資料包<br/>(TS 常量)"] --> H["historicalToWorld"]
+    BW["烘焙 JSON<br/>(?world=)"] --> DS["deserializeMap"]
   end
-  G --> W[("MapWorld<br/>純資料")]
+  G --> W[("MapWorld<br/>統一 schema<br/>(含 attribution)")]
   C --> W
-  OV["EditOverlay<br/>localStorage"] -- "applyEditOverlay" --> W
+  H --> W
+  DS --> W
+  T -. "就地修改" .-> W
+  DEM -. "elevation sampler 注入" .-> H
+  OV["EditOverlay<br/>(localStorage autosave<br/>或 .mapdraft.json)"] -- "applyEditOverlay" --> W
   W --> R["ThreeMapRenderer.loadWorld"]
   R --> L["layer groups:<br/>terrain / water / roads / buildings /<br/>trees / landmarks / traffic / stars"]
-  R -- "events" --> UI["AtlasUI（React + zustand）"]
-  UI -- "setSelected / focusObject / setEnvironment" --> R
+  R -- "events" --> UI["AtlasUI(React + zustand)"]
+  UI -- "setSelected / focusObject / focusPoint / setEnvironment" --> R
   ED["BuildingEditor"] -- "修改" --> W
   ED -- "refreshBuildings" --> R
 ```
+
+Demo boot 的世界解析優先序:**pendingDraft(sessionStorage)> `?map=`(歷史)> `?world=`(烘焙)> `?city=`/`?bbox=`(OSM,+高程)> 程序生成**。全部經同一個 `loadWorld`。
 
 ### 4.3 renderer 內部分工(`three/src/`)
 
 | 模組 | 職責 |
 |---|---|
-| `renderer.ts` | 組裝一切:場景/光/霧、frame loop、環境切換、圖層、事件 emitter、公開 API(`loadWorld/pickObject/pickGround/focusObject/setSelected/refreshBuildings/projectToScreen/...`) |
-| `cameraRig.ts` | 三模式相機 + focus tween + 鍵盤狀態 + 碰撞注入點 |
+| `renderer.ts` | 組裝一切:場景/光/霧(fogScale 按世界尺寸)、frame loop(dt clamp 0.1s)、環境切換、圖層、事件 emitter、公開 API(`loadWorld/pickObject/pickGround/focusObject/focusPoint/setSelected/refreshBuildings/projectToScreen/...`) |
+| `cameraRig.ts` | 三模式相機 + focus tween(1.1s,dt 驅動)+ 鍵盤狀態 + 碰撞注入點 |
 | `interaction.ts` | raycast picking(instanced + faceRanges)、hover/selected 高亮物件 |
 | `collision.ts` | 純 TS 空間雜湊 AABB(可 node 單測) |
-| `*Mesh.ts / *Group.ts / simulation.ts / sky.ts / flatAreas.ts` | 各圖層的幾何構建,皆為 `(world) => Object3D` 純構建函數 |
-| `editor.ts` | 命令堆疊 + 拖曳 + overlay 追蹤 |
+| `*Mesh.ts / *Group.ts / simulation.ts / sky.ts / flatAreas.ts` | 各圖層的幾何構建,皆為 `(world) => Object3D` 純構建函數;flatAreas 水面取輪廓最低點、綠地取平均 |
+| `editor.ts` | 命令堆疊 + 拖曳 + overlay 追蹤(`getOverlay()` 供草稿/autosave) |
 | `tour.ts` | 地標巡覽 |
 
 ---
@@ -218,9 +245,9 @@ flowchart LR
 
 ### 5.1 效能
 
-- 建築/樹/車全部 instancing;多邊形建築合併為單一 geometry(單 draw call)。
+- 建築/樹/車全部 instancing;多邊形建築合併為單一 geometry(單 draw call)。實測上限:渋谷 2×(18,318 棟)可渲染。
 - `loadWorld` / `refreshBuildings` 會 dispose 舊 geometry/material/texture(`disposeObject` 遍歷含 texture)。新增持有 GPU 資源的模組時**必須**接入 dispose 鏈。
-- Shadow map 是最大 GPU 成本(場景每幀多渲染一次)。用戶真機確認 60fps 無壓力;低端裝置可走 quality 'low'。
+- Shadow map 是最大 GPU 成本。用戶真機確認 60fps 無壓力;低端裝置可走 quality 'low'。
 
 ### 5.2 quality 機制(重要)
 
@@ -228,36 +255,48 @@ flowchart LR
 
 ### 5.3 3D 座標與幾何慣例
 
-- 世界原點在地圖中心;北 = -Z(OSM 投影 `y = -(lat-lat0)*111320` 與 minimap/指南針一致)。
+- 世界原點在地圖中心;北 = -Z(OSM/歷史投影 `y = -(lat-lat0)*scale` 與 minimap/指南針一致)。
 - `Vec2.y` 在 footprint/boundary 語境代表**世界 Z**。
 - Shape/Extrude 幾何:shape 用 `(x, -z)`,`rotateX(-PI/2)` 後 depth 變 +Y。
 - 道路抬升 0.35 防 z-fighting;橋面 = waterLevel + 7;flat water/green 多邊形 +0.12/+0.06。
 - 新 mesh 記得繞向(頂面朝上)或 `DoubleSide`——Phase 3 的道路隱形就是繞向反了。
+- 尺度:城市世界 1 unit = 1 m;歷史戰略世界 1 unit = 1 km(垂直另有誇張係數)。寫尺寸常數前先確認在哪種世界。
 
 ### 5.4 資料結構與擴展
 
-- 改 `MapWorld` 型別:優先加**可選欄位**(如 `waterPolygons?`),序列化自動相容;`SERIALIZATION_VERSION` 只在破壞性變更時 bump。
-- 手工構造 `MapWorld` 的測試 fixture(serialize.test / collision.test)在加**必填**欄位時會編譯失敗——這是刻意的提醒。
+- 改 `MapWorld` 型別:優先加**可選欄位**(如 `waterPolygons?`、`attribution?`),序列化自動相容;`SERIALIZATION_VERSION` 只在破壞性變更時 bump。
+- 手工構造 `MapWorld` 的測試 fixture(serialize.test / collision.test / terrain.test)在加**必填**欄位時會編譯失敗——這是刻意的提醒。
+- 草稿格式(`core/draft.ts`)有獨立的 `DRAFT_VERSION`;改 `DraftBase`/overlay 結構時 bump 並在 `parseDraft` 保持舊版拒絕訊息可讀。
 
 ### 5.5 常見 bug 與排查(全部實際發生過)
 
 | 症狀 | 原因 / 修法 |
 |---|---|
 | 某 mesh 完全看不到但資料正常 | 三角形繞向 → 被 culling。查 winding 或暫時 `DoubleSide` |
+| 大世界整片被霧吞沒 | fog 距離按城市世界調的 → `applyEnvironment` 的 `fogScale=max(1, worldHalf/800)` 已處理;新環境參數記得乘 |
 | CI e2e 大面積超時、本地全過 | CI 軟渲染 + shadow → 用 quality 機制;已設 `retries: 2` + 120s timeout(playwright.config) |
+| 本地全套 e2e 偶發大片失敗(boot 15s 超時) | 本機 6 workers 並行 WebGL 過載 → `--workers=2` 全綠;CI 有自己的 worker 數與 retries |
 | walk/fly 測試裡相機亂走 | headless pointer lock 行為不一:**先 lookAt 再 setCameraMode**,測試不要點 canvas(會觸發 pointer lock) |
+| e2e 等待動畫後斷言位置錯(CI 慢機) | 相機 tween 是 dt 驅動且 dt clamp 0.1s,低 FPS 下牆鐘時間拉長 → **不要固定 waitForTimeout,`expect.poll` 等到達** |
+| e2e 導航類操作 context destroyed / 舊頁面搶答 | 開草稿/選城市會異步導航,舊頁面也滿足 `__mapEngine` 等待條件 → **先 `page.waitForEvent('framenavigated')` 再等新引擎** |
+| mock 了 Overpass 的測試仍發真網請求 | A5 之後城市載入會抓 elevation tiles → 每個 OSM mock 測試**都要** `route('**/elevation-tiles-prod/**', abort)`(走平地 fallback)或 fulfill fixture |
+| Node 腳本呼叫 Overpass 得 406 | Node fetch 無預設 User-Agent,Overpass 拒絕 → `fetchOsmArea` 已固定送識別 UA(瀏覽器忽略此 forbidden header) |
+| React StrictMode 下 boot 邏輯跑兩次的各種怪象 | double-mount:消費式讀取(sessionStorage 取後即刪)會令第二次 boot 拿不到 → 改「綁 URL、保留不消費」;異步抓取要用 boot AbortController 取消,否則棄置的 boot 繼續在背景抓資料並污染 loading 文案 |
 | tsup `--dts` 報 TS6307 | composite tsconfig 衝突 → 各包有獨立 `tsconfig.build.json`(無 composite),tsup 指向它 |
-| Pages deploy “try again later” / 兩個同名 artifact | 前者暫時性;重跑要用 `gh workflow run` 開新 run,不要 rerun --failed |
+| Pages deploy “try again later” / 兩個同名 artifact | 前者暫時性(已遇 3 次);重跑要用 `gh workflow run` 開新 run,不要 rerun --failed |
 | e2e strict mode violation: 2 canvases | minimap 也是 canvas → `locator('canvas').first()` |
-| 工具列蓋住右側面板按鈕 | `.atlas-toolbar.shifted` 邏輯:selectedId **或** editMode 時 right:328px + top:64px |
+| 工具列蓋住右側面板按鈕 / 手機面板點不到 | `.atlas-toolbar.shifted`:selectedId **或** editMode 時 right:328px + top:64px;手機側欄開啟時 z-27 > toolbar z-26 |
+| 列表被某來源的輔助建築塞爆 | `ui/entries.ts` 收錄規則(見 §3.4 末行)——輔助幾何(城牆等)用 type `residential` 避開 |
 | headless FPS 只有 4-8 | 軟件渲染假象,不代表真機效能,別按它調優 |
 
 ### 5.6 視覺驗證工作流(無 preview 面板環境)
 
 ```bash
-nohup pnpm --filter @map-engine/demo dev > /dev/null 2>&1 &   # 背景 dev server
-# scratchpad 有現成腳本模式:playwright chromium 開 http://localhost:5173/?q=high
-# → page.evaluate 擺相機(window.__mapEngine.renderer.camera.position.set)→ screenshot → Read 圖檔目檢
+# 背景 dev server(用 run_in_background,收工記得 TaskStop)
+pnpm dev
+# 截圖:node --input-type=module 內 import { chromium } from '@playwright/test'
+# 開 http://localhost:5173/?q=high(或 ?map=three-kingdoms&q=high)
+# → page.evaluate 擺相機/選物件(window.__mapEngine)→ screenshot → Read 圖檔目檢
 ```
 
 `window.__mapEngine = { renderer, world, tour, editor }` 是 demo 掛的除錯/測試鉤子,e2e 大量依賴,**不要移除**。
@@ -285,29 +324,38 @@ nohup pnpm --filter @map-engine/demo dev > /dev/null 2>&1 &   # 背景 dev serve
 
 ### 6.3 修改視覺樣式
 
-- 地形配色:`terrainMesh.ts` 高度帶 + `BLOCK_COLORS`;建築:`buildingsMesh.ts` 的 `FACADE_TINTS`/`POLY_TINTS` 與 `makeFacadeTexture`;環境:`renderer.applyEnvironment`;UI:`ui/ui.css` CSS 變數(`--accent` 等)。
+- 地形配色:`terrainMesh.ts` 高度帶 + `BLOCK_COLORS`;建築:`buildingsMesh.ts` 的 `FACADE_TINTS`/`POLY_TINTS` 與 `makeFacadeTexture`;環境:`renderer.applyEnvironment`(注意 fogScale);UI:`ui/ui.css` CSS 變數(`--accent` 等)。
 - 改視覺後跑 `e2e/visual.spec.ts`(非空白檢查)並截圖對照;目前**沒有** pixel-diff 基線(候選項 C11 未做)。
 
-### 6.4 接入新的資料來源(參考 OSM adapter 全流程)
+### 6.4 接入新的資料來源(已有三個範例:osm / terrain / historical)
 
-1. 新 package(複製 `packages/osm` 的 package.json/tsconfig×2/tsup.config 模式),只依賴 core。
-2. 寫 `xxxToWorld(data, opts): MapWorld`:投影到以中心為原點的米制座標、建 chunk 高度網格(有高程就填真值,沒有就平地)、建築 footprint 多邊形(多邊形自動走 extrude 管線)、道路映射成 RoadGraph(共享節點 id = 路口連通)、`waterPolygons`/`greenPolygons` 可選欄位。
-3. 純轉換必須配 fixture 單元測試;網路抓取在 e2e 用 `page.route()` mock。
-4. demo:載入入口 + loading 文案 + 署名(OSM 要求 attribution,新來源看其授權)。
-5. **OSM v1 已知限制**(v2 候選):平地無高程、不處理 multipolygon relations、海岸線海面未重建(維港不顯示)。
+**選型先讀 `map-data-sources-research.md`**(§2 有 12+ 來源的授權/格式/限制評估;§6 有方案比較)。實作模式:
+
+1. 新 package(複製 `packages/terrain` 的 package.json/tsconfig×2/tsup.config 模式),**只依賴 core**;root `package.json` 的 typecheck 腳本加包名;demo 依賴加 `workspace:*`。
+2. 寫 `xxxToWorld(data, opts): MapWorld`(整世界來源,如 osm/historical)**或** `applyXxxToWorld(world, ...)`(疊加型來源,如 terrain):投影到以中心為原點的座標(定好尺度:m 或 km)、chunk 高度網格、footprint 多邊形(自動走 extrude 管線)、RoadGraph(共享節點 id = 連通)、`waterPolygons`/`greenPolygons`、**`attribution` 寫入署名**。
+3. 網絡抓取要:可注入 `fetchFn`(單測用)、支援 `AbortSignal`(boot 取消)、友好錯誤訊息、量大時分塊+限速+退避(參考 `osm/bake.ts`)。
+4. 純轉換必須配 fixture 單元測試;網路在 e2e 用 `page.route()` mock(**別忘 elevation route**,見 §5.5)。
+5. demo 接入四件套:boot 分支(注意優先序)+ loading 文案 + 草稿 sourceSlug 前綴映射(`drafts.ts`/`App.tsx` openDraftFile)+ Toolbar 入口。
+6. SidePanel:若世界 id 用新前綴,更新 `isImported` 判斷與 subtitle 分支。
 
 ### 6.5 擴充編輯器
 
 - 新操作 = 一個 `Command`(apply/revert 成對),經 `commit()` 進歷史;改既有建築用 `mutateCommand` 快照包裝即可。
 - 新增可編輯屬性:`three/editor.ts` 加方法 → `ui/types.ts` `BuildingEditorLike` 同步 → `EditorPanel` 加控件。
-- 若編輯**非建築**物件(道路/地標):目前 overlay 模型只覆蓋建築,需擴充 `core/edits.ts` 的 `EditOverlay` 並 bump 其 `version`。
+- 若編輯**非建築**物件(道路/地標):目前 overlay 模型只覆蓋建築,需擴充 `core/edits.ts` 的 `EditOverlay` 並 bump 其 `version`(草稿格式同步考慮)。
 
 ### 6.6 安全重構守則
 
 1. 動 core 前先跑 `pnpm test`——determinism 測試是最敏感的警報器。
 2. 動 renderer 公開 API:同步 `ThreeMapRenderer` 介面 + `MapRendererLike` + 檢查 e2e 對 `__mapEngine` 的使用。
 3. 任何 UI 佈局改動跑 `visual.spec.ts` 的不重疊檢查(desktop+mobile)。
-4. 全綠標準:`pnpm typecheck && pnpm lint && pnpm test && npx playwright test`(desktop+mobile ≈ 4-6 分鐘)。
+4. 全綠標準:`pnpm typecheck && pnpm lint && pnpm test && npx playwright test --workers=2`(本地全套 3 viewport ≈ 6 分鐘;CI 跑 desktop+mobile)。
+
+### 6.7 擴充歷史地圖(基於 B14 的模式)
+
+- **加城池/河流/路線**:直接改 `historical/src/data/threeKingdoms.ts`(TS 常量,有型別);**每筆必帶 `confidence` + `sources`**;單元測試自動校驗(勢力引用、bbox 範圍、路線城市存在)。座標可用 Wikidata(CC0)查、以 TGAZ API 逐點核對(**不可**成套匯入 CHGIS——授權禁再散布)。
+- **加新歷史地圖**(如楚漢、戰國):新建 `data/xxx.ts` 遵循 `HistoricalMapData` schema → 加入 `HISTORICAL_MAPS` registry → URL `?map=xxx` 與 Toolbar 選單自動生效。
+- **三國 v2 候選**(記錄在案):中式建築風格(目前主殿用現代窗戶貼圖,違和)、勢力範圍地形著色(district boundary 已存好)、年份切換(220 vs 262)、更多城池/戰役標記。
 
 ---
 
@@ -317,37 +365,44 @@ nohup pnpm --filter @map-engine/demo dev > /dev/null 2>&1 &   # 背景 dev serve
 
 1. 本文件
 2. `README.md`(對外文檔:安裝、控制、SDK 用法、架構筆記)
-3. 原始需求 `3d-map-engine-plan-v2-zh-Hant.md`(§13「給 AI Agent 的實作要求」仍然有效)
-4. `packages/core/src/types.ts`(整個系統的詞彙表)
-5. `packages/three/src/renderer.ts`(所有東西的組裝點)
-6. `git log --oneline`(每個 commit 對應一個階段,訊息即變更說明)
+3. `map-data-sources-research.md`(若涉及資料來源:授權紅線與選型結論)
+4. 原始需求 `3d-map-engine-plan-v2-zh-Hant.md`(§13「給 AI Agent 的實作要求」仍然有效)
+5. `packages/core/src/types.ts`(整個系統的詞彙表)
+6. `packages/three/src/renderer.ts`(所有東西的組裝點)
+7. `git log --oneline`(每個 commit 對應一個階段,訊息即變更說明)
+
+另有給人類開發者的 `packages/demo/public/developer-guide.html`(15 章,含逐檔案職責與機制詳解)——與本文件互補:它講「現狀地圖」,本文件講「怎麼來的 + 怎麼繼續」。
 
 ### 7.2 動手前檢查
 
-- [ ] `pnpm install && pnpm typecheck && pnpm lint && pnpm test` 全綠(基線 47 unit)
-- [ ] `npx playwright install chromium`(首次)後 `npx playwright test --project=desktop` 全綠(基線 22+1skip)
+- [ ] `pnpm install && pnpm typecheck && pnpm lint && pnpm test` 全綠(基線 **91 unit**)
+- [ ] `npx playwright install chromium`(首次)後 `npx playwright test --workers=2` 全綠(基線全套 3 viewport **111 passed + 10 skipped**;本機別開太多 workers,見 §5.5)
 - [ ] 確認要改的部分在 §3.4 速查表中會牽動誰
-- [ ] 若改生成邏輯:想清楚舊 `EditOverlay`(localStorage)與舊分享 URL(cfg/seed)是否仍能載入
+- [ ] 若改生成邏輯:想清楚舊 `EditOverlay`(localStorage)、`.mapdraft.json` 草稿與舊分享 URL(cfg/seed/bbox/map)是否仍能載入
 
 ### 7.3 完成後驗證(每個階段的 Definition of Done)
 
 - [ ] `pnpm typecheck && pnpm lint && pnpm test`
-- [ ] 相關 e2e + 必要時新增 e2e(interaction/ui/environment/visual/world/prompt/osm/walk/editor 九個 spec 檔可參考模式)
+- [ ] 相關 e2e + 必要時新增 e2e(現有 14 個 spec 檔可參考模式:smoke/interaction/ui/environment/visual/world/prompt/osm/walk/editor/draft/city-search/baked-world/terrain/historical)
 - [ ] Playwright 截圖目檢(帶 `?q=high` 看陰影)
-- [ ] commit(訊息含階段說明)→ push → **等 CI 綠**(`gh run watch`)→ 若部署有變化,實測 live URL
-- [ ] 有踩坑或新慣例 → 回寫本文件
+- [ ] commit(訊息含階段說明)→ push → **等 CI 綠**(`gh run watch`;deploy 暫時性失敗就 `gh workflow run` 開新 run)→ 若部署有變化,實測 live URL
+- [ ] 有踩坑或新慣例 → 回寫本文件(§2 表格 + §5.5 陷阱表)+ 更新 `developer-guide.html` 對應章節
 
 ### 7.4 待確認 / 懸置事項
 
 | 事項 | 狀態 |
 |---|---|
-| npm 實際發佈 | **用戶決定擱置**。基建全備:`npm login` + `pnpm release`,或設 `NPM_TOKEN` secret + push `v*` tag。`@map-engine` scope 當時查為未發佈(404),但 npm org 歸屬**待確認**,403 時 fallback 為改名 |
-| Prompt-to-map 的 Claude API 真實呼叫 | 代碼完成,本地解析路徑有 e2e;**API 路徑未實測**(開發機無 Anthropic 憑證)。用戶帶 key 實測若報錯,檢查 `output_config.format` schema 相容性 |
-| 真機效能基線 | 用戶確認「無卡頓」(含 shadow),但無量化 FPS 數據 |
+| npm 實際發佈 | **用戶決定擱置**。基建全備:`npm login` + `pnpm release`,或設 `NPM_TOKEN` secret + push `v*` tag。`@map-engine` scope 歸屬**待確認**,403 時 fallback 為改名 |
+| Prompt-to-map 的 Claude API 真實呼叫 | 代碼完成,本地解析路徑有 e2e;**API 路徑未實測**(開發機無 Anthropic 憑證) |
+| Photon 公共實例 | 免 key 但無 SLA;流量大時自部署或實作付費 provider(`GeocodingProvider` 介面已就位) |
+| CHGIS 商業授權 | 若日後想要學術級三國資料,需去函 Fairbank Center 詢問(見調研文檔) |
+| 真機效能基線 | 用戶確認「無卡頓」(含 shadow),但無量化 FPS 數據;18k 棟(渋谷 2×)實測可渲染 |
 | C11 視覺 pixel-diff 基線 | 未做(候選項) |
-| OSM v2(高程/multipolygon/海岸線) | 未做(候選項) |
+| OSM v2 剩餘項 | multipolygon relations(高程與海面已由 A5 解決) |
+| 三國 v2 | 中式建築風格 / 勢力著色 / 年份切換(見 §6.7) |
+| 動態磁磚串流(調研方案 C) | 未做——「無縫超大世界」的長期方向,工程量 3-5 sessions |
 | Playwright large viewport project | 存在但 CI 只跑 desktop+mobile |
 
 ---
 
-*本文件由構建該引擎的 AI Agent(Claude)於 2026-07-05 撰寫,內容與 git 歷史一一對應。*
+*本文件由構建該引擎的 AI Agent(Claude)撰寫,2026-07-06 全面修訂至 B14(三國 MVP)完成狀態,內容與 git 歷史一一對應。*
