@@ -5,6 +5,6 @@ test('demo renders a non-blank Three.js scene with FPS counter', async ({ page }
   await expect(page.getByTestId('fps')).toBeVisible();
   // FPS should become non-zero once the render loop is running.
   await expect(page.getByTestId('fps')).not.toHaveText('0 FPS', { timeout: 10_000 });
-  const canvas = page.locator('canvas');
+  const canvas = page.locator('canvas').first();
   await expect(canvas).toBeVisible();
 });

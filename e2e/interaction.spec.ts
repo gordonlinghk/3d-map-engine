@@ -23,7 +23,7 @@ test('fly mode moves the camera with WASD', async ({ page }) => {
     const c = window.__mapEngine.renderer.camera;
     return { x: c.position.x, y: c.position.y, z: c.position.z };
   });
-  await page.locator('canvas').click({ position: { x: 700, y: 400 } });
+  await page.locator('canvas').first().click({ position: { x: 700, y: 400 } });
   await page.keyboard.down('KeyW');
   await page.waitForTimeout(700);
   await page.keyboard.up('KeyW');
@@ -77,7 +77,7 @@ test('clicking a building selects it and opens the info panel', async ({ page })
   });
 
   await page.waitForTimeout(300);
-  await page.locator('canvas').click({ position: { x: screenPos.x, y: screenPos.y } });
+  await page.locator('canvas').first().click({ position: { x: screenPos.x, y: screenPos.y } });
   await expect(page.getByTestId('info-panel')).toBeVisible({ timeout: 5_000 });
   const selectedId = await page.evaluate(() => window.__mapEngine.renderer.getSelected());
   expect(selectedId).toBeTruthy();
