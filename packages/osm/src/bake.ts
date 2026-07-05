@@ -64,9 +64,11 @@ export type TiledFetchOptions = {
   delayMs?: number;
   /** Retry attempts per tile after the first try (default 3, backoff 5s/15s/45s). */
   retries?: number;
+  /** Abort between (and within) tile requests — rejects with an AbortError. */
+  signal?: AbortSignal;
   onProgress?: (progress: TiledFetchProgress) => void;
   /** Injectable for tests. */
-  fetchArea?: (bbox: BBox) => Promise<OsmResponse>;
+  fetchArea?: (bbox: BBox, options?: { signal?: AbortSignal }) => Promise<OsmResponse>;
   sleep?: (ms: number) => Promise<void>;
 };
 
@@ -84,10 +86,14 @@ export async function fetchOsmAreaTiled(
     tileKm = 1.2,
     delayMs = 1500,
     retries = 3,
+    signal,
     onProgress,
     fetchArea = fetchOsmArea,
     sleep = defaultSleep,
   } = options;
+  const throwIfAborted = (): void => {
+    if (signal?.aborted) throw new DOMException('Tiled fetch aborted', 'AbortError');
+  };
   const tiles = splitBBox(bbox, tileKm);
   const responses: OsmResponse[] = [];
   for (let i = 0; i < tiles.length; i++) {
@@ -96,11 +102,13 @@ export async function fetchOsmAreaTiled(
     let response: OsmResponse | undefined;
     for (let attempt = 0; attempt <= retries; attempt++) {
       if (attempt > 0) await sleep(5000 * 3 ** (attempt - 1)); // 5s, 15s, 45s
+      throwIfAborted();
       try {
-        response = await fetchArea(tile);
+        response = await fetchArea(tile, { signal });
         onProgress?.({ tile: i + 1, tiles: tiles.length, bbox: tile, elements: response.elements.length, attempt: attempt + 1 });
         break;
       } catch (err) {
+        if ((err as Error)?.name === 'AbortError') throw err;
         lastError = err;
       }
     }

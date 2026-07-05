@@ -91,7 +91,8 @@ test('city search: suggestions disambiguate same-name cities; selection loads th
   await expect(options.nth(0)).toContainText('Île-de-France, France');
   await expect(options.nth(1)).toContainText('Texas, United States');
 
-  // Keyboard: ↓ to the Texas entry, Enter selects and navigates.
+  // Pick a 2× area, then keyboard: ↓ to the Texas entry, Enter selects and navigates.
+  await page.getByTestId('city-search-scale').selectOption('2');
   const navPromise = page.waitForEvent('framenavigated');
   await page.getByTestId('city-search-input').press('ArrowDown');
   await page.getByTestId('city-search-input').press('Enter');
@@ -122,6 +123,9 @@ test('city search: suggestions disambiguate same-name cities; selection loads th
   expect(info.hasTower).toBe(true);
   expect(info.url).toContain('bbox=');
   expect(info.url).not.toContain('city=');
+  // 2× scale → ~2.6 km of latitude (2 × 1.3 km window).
+  const bbox = new URLSearchParams(info.url).get('bbox')!.split(',').map(Number);
+  expect((bbox[2]! - bbox[0]!) * 110.574).toBeCloseTo(2.6, 1);
 
   // The world panel reports the current selection.
   await page.getByTestId('world-toggle').click();

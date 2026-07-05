@@ -40,7 +40,10 @@ export declare function createPhotonProvider(options?: {
     lang?: string;
 }): GeocodingProvider;
 export declare function createMockGeocodingProvider(): GeocodingProvider;
-export declare function candidateToCityArea(candidate: Pick<CityCandidate, 'lat' | 'lon' | 'bbox' | 'label'>): {
+export declare function candidateToCityArea(candidate: Pick<CityCandidate, 'lat' | 'lon' | 'bbox' | 'label'>, options?: {
+    /** Window size multiplier, clamped to 1..3 (1 ≈ 1.3×1.8 km, 3 ≈ 4×5.4 km). */
+    scale?: number;
+}): {
     slug: string;
     name: string;
     bbox: BBox;

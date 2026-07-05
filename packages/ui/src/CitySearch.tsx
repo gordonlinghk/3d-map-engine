@@ -18,10 +18,11 @@ export function CitySearch({
   currentCityName,
 }: {
   onSearch: (query: string, signal: AbortSignal) => Promise<CityCandidateLike[]>;
-  onSelect: (candidate: CityCandidateLike) => void;
+  onSelect: (candidate: CityCandidateLike, scale: number) => void;
   currentCityName?: string;
 }) {
   const [query, setQuery] = useState('');
+  const [scale, setScale] = useState(1);
   const [results, setResults] = useState<CityCandidateLike[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +81,7 @@ export function CitySearch({
   const select = (candidate: CityCandidateLike): void => {
     setResults(null);
     setQuery(candidate.label);
-    onSelect(candidate);
+    onSelect(candidate, scale);
   };
 
   const onKeyDown = (e: React.KeyboardEvent): void => {
@@ -129,6 +130,19 @@ export function CitySearch({
           {loading ? '…' : '🔍'}
         </button>
       </div>
+      <label className="atlas-city-search-scale">
+        <span>AREA</span>
+        <select
+          data-testid="city-search-scale"
+          title="Area to fetch around the city centre"
+          value={scale}
+          onChange={(e) => setScale(Number(e.target.value))}
+        >
+          <option value={1}>1× · ~1.3 km · fast</option>
+          <option value={2}>2× · ~2.6 km · ~30 s</option>
+          <option value={3}>3× · ~4 km · 1–2 min</option>
+        </select>
+      </label>
 
       {loading && (
         <div className="atlas-city-search-note" data-testid="city-search-loading">

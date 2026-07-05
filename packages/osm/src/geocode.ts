@@ -196,14 +196,19 @@ const KM_PER_DEG_LON_EQUATOR = 111.32;
 
 export function candidateToCityArea(
   candidate: Pick<CityCandidate, 'lat' | 'lon' | 'bbox' | 'label'>,
+  options: {
+    /** Window size multiplier, clamped to 1..3 (1 ≈ 1.3×1.8 km, 3 ≈ 4×5.4 km). */
+    scale?: number;
+  } = {},
 ): {
   slug: string;
   name: string;
   bbox: BBox;
 } {
-  const halfLat = SPAN_LAT_KM / 2 / KM_PER_DEG_LAT;
+  const scale = Math.min(3, Math.max(1, options.scale ?? 1));
+  const halfLat = (SPAN_LAT_KM * scale) / 2 / KM_PER_DEG_LAT;
   const cosLat = Math.max(0.2, Math.cos((candidate.lat * Math.PI) / 180));
-  const halfLon = SPAN_LON_KM / 2 / (KM_PER_DEG_LON_EQUATOR * cosLat);
+  const halfLon = (SPAN_LON_KM * scale) / 2 / (KM_PER_DEG_LON_EQUATOR * cosLat);
 
   let bbox: BBox = [
     candidate.lat - halfLat,
@@ -238,7 +243,10 @@ export function parseBBoxSlug(value: string): BBox | null {
   if (s >= n || w >= e || Math.abs(s) > 90 || Math.abs(n) > 90 || Math.abs(w) > 180 || Math.abs(e) > 180) {
     return null;
   }
-  // Refuse extracts that would flood Overpass (≈ >6 km per side).
-  if (n - s > 0.06 || e - w > 0.09) return null;
+  // Refuse extracts that would flood Overpass (> ~6.5 km per side).
+  const latKm = (n - s) * KM_PER_DEG_LAT;
+  const cosMid = Math.max(0.2, Math.cos((((s + n) / 2) * Math.PI) / 180));
+  const lonKm = (e - w) * KM_PER_DEG_LON_EQUATOR * cosMid;
+  if (latKm > 6.5 || lonKm > 6.5) return null;
   return [s, w, n, e];
 }

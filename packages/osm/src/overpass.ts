@@ -20,9 +20,10 @@ out body;`;
 /** Fetch an area from the Overpass API (browser and Node 18+). */
 export async function fetchOsmArea(
   bbox: BBox,
-  options: { endpoint?: string } = {},
+  options: { endpoint?: string; signal?: AbortSignal } = {},
 ): Promise<OsmResponse> {
   const response = await fetch(options.endpoint ?? DEFAULT_ENDPOINT, {
+    signal: options.signal,
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',

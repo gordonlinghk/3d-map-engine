@@ -25,8 +25,8 @@ export type ToolbarProps = {
   onLoadCity?: (slug: string) => void;
   /** City geocoding search (enables the autocomplete input). */
   onSearchCities?: (query: string, signal: AbortSignal) => Promise<CityCandidateLike[]>;
-  /** Called when the user picks a search candidate. */
-  onSelectCity?: (candidate: CityCandidateLike) => void;
+  /** Called when the user picks a search candidate (scale = area multiplier 1..3). */
+  onSelectCity?: (candidate: CityCandidateLike, scale: number) => void;
   /** Name of the currently loaded real city, if any. */
   currentCityName?: string;
   /** Building editor (enables the ✏️ toggle). */

@@ -153,6 +153,17 @@ describe('candidateToCityArea', () => {
     expect(candidateToCityArea(district).bbox).toEqual([48.85, 2.34, 48.856, 2.352]);
   });
 
+  it('scale multiplies the window (clamped to 1..3)', () => {
+    const base = candidateToCityArea(paris);
+    const x2 = candidateToCityArea(paris, { scale: 2 });
+    const x9 = candidateToCityArea(paris, { scale: 9 }); // clamped to 3
+    const latSpan = (a: { bbox: [number, number, number, number] }): number => a.bbox[2] - a.bbox[0];
+    expect(latSpan(x2) / latSpan(base)).toBeCloseTo(2, 3);
+    expect(latSpan(x9) / latSpan(base)).toBeCloseTo(3, 3);
+    // A 3× window must still pass the URL validator.
+    expect(parseBBoxSlug(x9.slug)).toEqual(x9.bbox);
+  });
+
   it('round-trips through parseBBoxSlug', () => {
     const area = candidateToCityArea(paris);
     expect(parseBBoxSlug(area.slug)).toEqual(area.bbox);

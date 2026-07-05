@@ -9,6 +9,6 @@ import type { CityCandidateLike } from './types';
  */
 export declare function CitySearch({ onSearch, onSelect, currentCityName, }: {
     onSearch: (query: string, signal: AbortSignal) => Promise<CityCandidateLike[]>;
-    onSelect: (candidate: CityCandidateLike) => void;
+    onSelect: (candidate: CityCandidateLike, scale: number) => void;
     currentCityName?: string;
 }): import("react").JSX.Element;

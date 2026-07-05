@@ -19,9 +19,13 @@ export type TiledFetchOptions = {
     delayMs?: number;
     /** Retry attempts per tile after the first try (default 3, backoff 5s/15s/45s). */
     retries?: number;
+    /** Abort between (and within) tile requests — rejects with an AbortError. */
+    signal?: AbortSignal;
     onProgress?: (progress: TiledFetchProgress) => void;
     /** Injectable for tests. */
-    fetchArea?: (bbox: BBox) => Promise<OsmResponse>;
+    fetchArea?: (bbox: BBox, options?: {
+        signal?: AbortSignal;
+    }) => Promise<OsmResponse>;
     sleep?: (ms: number) => Promise<void>;
 };
 /**

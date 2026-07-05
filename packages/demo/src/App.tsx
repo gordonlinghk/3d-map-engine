@@ -26,7 +26,7 @@ import {
   candidateToCityArea,
   createMockGeocodingProvider,
   createPhotonProvider,
-  fetchOsmArea,
+  fetchOsmAreaTiled,
   osmToWorld,
   parseBBoxSlug,
 } from '@map-engine/osm';
@@ -152,6 +152,9 @@ export function App() {
     });
 
     let disposed = false;
+    // Cancels in-flight OSM fetches when the effect is torn down (StrictMode
+    // double-mount would otherwise keep the first boot's tiles downloading).
+    const bootAbort = new AbortController();
     const boot = async (): Promise<void> => {
       const { seed, preset, directives, environment } = readUrlParams();
       const params = new URLSearchParams(window.location.search);
@@ -196,7 +199,18 @@ export function App() {
       } else if (city) {
         setLoadingText(`Fetching ${city.name} from OpenStreetMap…`);
         try {
-          const osm = await fetchOsmArea(city.bbox);
+          // Tiled fetch: 1 tile for the default window, several for scaled-up
+          // areas — with progress so long loads don't look stuck.
+          const osm = await fetchOsmAreaTiled(city.bbox, {
+            tileKm: 2,
+            delayMs: 1200,
+            signal: bootAbort.signal,
+            onProgress: (p) => {
+              if (p.tiles > 1) {
+                setLoadingText(`Fetching ${city.name} from OpenStreetMap… (${p.tile}/${p.tiles})`);
+              }
+            },
+          });
           if (disposed) return;
           setLoadingText(`Building ${city.name}…`);
           world = osmToWorld(osm, { name: city.name, bbox: city.bbox });
@@ -209,6 +223,7 @@ export function App() {
             snapshot: serializeMap(world),
           };
         } catch (err) {
+          if ((err as Error)?.name === 'AbortError' || disposed) return;
           console.error('OSM load failed, falling back to procedural city', err);
           setLoadingText('OpenStreetMap unavailable — generating a procedural city…');
           world = generateWorld(seed, applyDirectives({ ...directives, preset }).config);
@@ -270,6 +285,7 @@ export function App() {
 
     return () => {
       disposed = true;
+      bootAbort.abort();
       tourRef.current?.stop();
       editorRef.current?.dispose();
       renderer.dispose();
@@ -386,13 +402,11 @@ export function App() {
     return geoProviderRef.current.searchCities(query, { signal, limit: 8 });
   };
 
-  const selectCity = (candidate: {
-    lat: number;
-    lon: number;
-    bbox?: BBox;
-    label: string;
-  }): void => {
-    const area = candidateToCityArea(candidate);
+  const selectCity = (
+    candidate: { lat: number; lon: number; bbox?: BBox; label: string },
+    scale: number,
+  ): void => {
+    const area = candidateToCityArea(candidate, { scale });
     const url = new URL(window.location.origin + window.location.pathname);
     url.searchParams.set('bbox', area.bbox.join(','));
     url.searchParams.set('cityName', area.name);

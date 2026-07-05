@@ -89,6 +89,24 @@ describe('fetchOsmAreaTiled', () => {
     expect(merged.elements).toEqual([]);
   });
 
+  it('stops between tiles when the signal aborts', async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const promise = fetchOsmAreaTiled(HK, {
+      tileKm: 1.2,
+      delayMs: 0,
+      signal: controller.signal,
+      fetchArea: () => {
+        calls += 1;
+        if (calls === 2) controller.abort();
+        return Promise.resolve({ elements: [] });
+      },
+      sleep: () => Promise.resolve(),
+    });
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(calls).toBe(2); // no tiles fetched after the abort
+  });
+
   it('gives up after the retry budget with a tile-identifying error', async () => {
     await expect(
       fetchOsmAreaTiled([22.28, 114.15, 22.284, 114.155], {
