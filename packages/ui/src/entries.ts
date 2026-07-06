@@ -3,7 +3,7 @@ import type { MapWorld } from '@map-engine/core';
 export type AtlasEntry = {
   id: string;
   name: string;
-  kind: 'company' | 'landmark' | 'district' | 'building';
+  kind: 'company' | 'landmark' | 'district' | 'building' | 'poi';
   category?: string;
   badge?: string;
   description: string;
@@ -54,6 +54,20 @@ export function buildAtlasEntries(world: MapWorld): AtlasEntry[] {
     }
   }
 
+  for (const obj of Object.values(world.objects)) {
+    if (obj.objectType !== 'poi') continue;
+    const poi = obj.poi;
+    entries.push({
+      id: poi.id,
+      name: poi.name,
+      kind: 'poi',
+      category: 'POI',
+      description: poi.description ?? '標註點',
+      tags: poi.tags,
+      unicorn: false,
+    });
+  }
+
   for (const lm of world.landmarks) {
     entries.push({
       id: lm.id,
@@ -101,7 +115,8 @@ export function filterEntries(entries: AtlasEntry[], chip: CategoryChip): AtlasE
   switch (chip) {
     case 'All':
       return entries.filter(
-        (e) => e.kind === 'company' || e.kind === 'landmark' || e.kind === 'building',
+        (e) =>
+          e.kind === 'company' || e.kind === 'landmark' || e.kind === 'building' || e.kind === 'poi',
       );
     case 'Landmarks':
       return entries.filter((e) => e.kind === 'landmark');

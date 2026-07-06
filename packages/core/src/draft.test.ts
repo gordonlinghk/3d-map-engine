@@ -98,6 +98,25 @@ describe('map drafts', () => {
     expect(parsed.overlay.deleted).toEqual([]);
   });
 
+  it('parses a legacy draft carrying a v1 overlay (migrated to v2)', () => {
+    const legacy = {
+      format: DRAFT_FORMAT,
+      version: 1,
+      name: 'legacy',
+      createdAt: NOW,
+      updatedAt: NOW,
+      base: proceduralBase,
+      overlay: { version: 1, modified: [], added: [makeBuilding('bldg:user:1')], deleted: ['bldg:0,0:1,1'] },
+    };
+    const parsed = parseDraft(JSON.stringify(legacy));
+    expect(parsed.overlay.version).toBe(2);
+    expect(parsed.overlay.added).toHaveLength(1);
+    expect(parsed.overlay.deleted).toEqual(['bldg:0,0:1,1']);
+    expect(parsed.overlay.addedPois).toEqual([]);
+    expect(parsed.overlay.modifiedPois).toEqual([]);
+    expect(parsed.overlay.deletedPois).toEqual([]);
+  });
+
   it('sanitizeOverlayForWorld drops entries whose buildings vanished from the base', () => {
     const world = generateWorld('draft-test', getPresetConfig('coastal-tech-city'));
     const existingId = Object.keys(world.objects).find((id) => id.startsWith('bldg:'))!;

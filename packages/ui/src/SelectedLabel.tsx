@@ -16,13 +16,17 @@ export function SelectedLabel() {
       ? obj.building.name
       : obj?.objectType === 'landmark'
         ? obj.landmark.name
-        : null;
+        : obj?.objectType === 'poi'
+          ? obj.poi.name
+          : null;
   const category =
     obj?.objectType === 'building'
       ? (obj.building.category ?? obj.building.type)
       : obj?.objectType === 'landmark'
         ? 'Landmark'
-        : undefined;
+        : obj?.objectType === 'poi'
+          ? 'POI'
+          : undefined;
 
   useEffect(() => {
     if (!selectedId || !name) return;

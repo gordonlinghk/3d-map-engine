@@ -2,7 +2,7 @@ import type { MapWorld } from '@map-engine/core';
 export type AtlasEntry = {
     id: string;
     name: string;
-    kind: 'company' | 'landmark' | 'district' | 'building';
+    kind: 'company' | 'landmark' | 'district' | 'building' | 'poi';
     category?: string;
     badge?: string;
     description: string;

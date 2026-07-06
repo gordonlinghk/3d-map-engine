@@ -1,4 +1,4 @@
-import type { MapLayerId, MapWorld } from '@map-engine/core';
+import type { MapLayerId, MapWorld, PoiIcon } from '@map-engine/core';
 
 /**
  * Structural interface of the renderer used by the UI. `ThreeMapRenderer`
@@ -53,7 +53,14 @@ export type CityCandidateLike = {
 /** Structural interface of the building editor (implemented in @map-engine/three). */
 export interface BuildingEditorLike {
   setEnabled(v: boolean): void;
-  getState(): { enabled: boolean; addMode: boolean; canUndo: boolean; canRedo: boolean; tick: number };
+  getState(): {
+    enabled: boolean;
+    addMode: boolean;
+    poiMode: boolean;
+    canUndo: boolean;
+    canRedo: boolean;
+    tick: number;
+  };
   onChange(cb: () => void): () => void;
   getBuilding(id: string): {
     id: string;
@@ -66,6 +73,11 @@ export interface BuildingEditorLike {
   rotate(id: string, degrees: number): void;
   deleteBuilding(id: string): void;
   setAddMode(v: boolean): void;
+  getPoi(id: string): { id: string; name: string; description?: string; icon: PoiIcon } | null;
+  setPoiMode(v: boolean): void;
+  renamePoi(id: string, name: string, description?: string): void;
+  setPoiIcon(id: string, icon: PoiIcon): void;
+  deletePoi(id: string): void;
   undo(): void;
   redo(): void;
 }

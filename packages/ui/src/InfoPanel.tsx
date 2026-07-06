@@ -5,6 +5,14 @@ import { avatarColor, avatarLetter } from './avatar';
 
 type Cell = { label: string; value: string; wide?: boolean };
 
+const POI_ICON_EMOJI: Record<string, string> = {
+  flag: '🚩',
+  quest: '⭐',
+  resource: '🌾',
+  danger: '⚠️',
+  note: '📝',
+};
+
 export function InfoPanel() {
   const { renderer, world } = useAtlas();
   const selectedId = useAtlasStore((s) => s.selectedId);
@@ -47,6 +55,17 @@ export function InfoPanel() {
           { label: 'Type', value: lm.kind },
           { label: 'Tags', value: lm.tags.join(' · ') },
         ] as Cell[],
+      };
+    }
+    if (obj.objectType === 'poi') {
+      const poi = obj.poi;
+      const cells: Cell[] = [];
+      if (poi.tags.length) cells.push({ label: 'Tags', value: poi.tags.join(' · ') });
+      return {
+        name: `${POI_ICON_EMOJI[poi.icon] ?? '🚩'} ${poi.name}`,
+        tag: poi.icon,
+        description: poi.description ?? '標註點',
+        cells,
       };
     }
     return null;

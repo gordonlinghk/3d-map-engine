@@ -1,20 +1,29 @@
 import * as THREE from 'three';
 import {
   addBuildingToWorld,
+  addPoiToWorld,
   emptyOverlay,
   moveFootprint,
   removeBuildingFromWorld,
+  removePoiFromWorld,
   replaceBuildingInWorld,
   rotateFootprint,
 } from '@map-engine/core';
-import type { BuildingInfo, EditOverlay, MapWorld } from '@map-engine/core';
+import type { BuildingInfo, EditOverlay, MapWorld, PoiIcon, PoiInfo } from '@map-engine/core';
 import type { ThreeMapRenderer } from './renderer';
 
-type Command = { label: string; apply(): void; revert(): void };
+type Command = {
+  label: string;
+  apply(): void;
+  revert(): void;
+  /** Which layer to rebuild after apply/revert. Defaults to 'buildings'. */
+  refresh?: 'buildings' | 'pois';
+};
 
 export type EditorState = {
   enabled: boolean;
   addMode: boolean;
+  poiMode: boolean;
   canUndo: boolean;
   canRedo: boolean;
   /** Bumped on every change so UIs can re-render. */
@@ -31,6 +40,11 @@ export type BuildingEditor = {
   rotate(id: string, degrees: number): void;
   deleteBuilding(id: string): void;
   setAddMode(v: boolean): void;
+  getPoi(id: string): PoiInfo | null;
+  setPoiMode(v: boolean): void;
+  renamePoi(id: string, name: string, description?: string): void;
+  setPoiIcon(id: string, icon: PoiIcon): void;
+  deletePoi(id: string): void;
   undo(): void;
   redo(): void;
   getOverlay(): EditOverlay;
@@ -44,7 +58,14 @@ export function createBuildingEditor(
   world: MapWorld,
   options: { initialOverlay?: EditOverlay; onOverlayChange?: (overlay: EditOverlay) => void } = {},
 ): BuildingEditor {
-  const state: EditorState = { enabled: false, addMode: false, canUndo: false, canRedo: false, tick: 0 };
+  const state: EditorState = {
+    enabled: false,
+    addMode: false,
+    poiMode: false,
+    canUndo: false,
+    canRedo: false,
+    tick: 0,
+  };
   const listeners = new Set<() => void>();
   const history: Command[] = [];
   let historyIndex = -1;
@@ -55,9 +76,19 @@ export function createBuildingEditor(
   const deletedIds = new Set<string>(options.initialOverlay?.deleted);
   let userCounter = addedIds.size;
 
+  const addedPoiIds = new Set<string>(options.initialOverlay?.addedPois.map((p) => p.id));
+  const modifiedPoiIds = new Set<string>(options.initialOverlay?.modifiedPois.map((p) => p.id));
+  const deletedPoiIds = new Set<string>(options.initialOverlay?.deletedPois);
+  let poiCounter = addedPoiIds.size;
+
   const buildingOf = (id: string): BuildingInfo | null => {
     const obj = world.objects[id];
     return obj?.objectType === 'building' ? obj.building : null;
+  };
+
+  const poiOf = (id: string): PoiInfo | null => {
+    const obj = world.objects[id];
+    return obj?.objectType === 'poi' ? obj.poi : null;
   };
 
   const getOverlay = (): EditOverlay => {
@@ -74,6 +105,18 @@ export function createBuildingEditor(
       const b = buildingOf(id);
       if (b) overlay.modified.push(structuredClone(b));
     }
+    for (const id of deletedPoiIds) {
+      if (!addedPoiIds.has(id)) overlay.deletedPois.push(id);
+    }
+    for (const id of addedPoiIds) {
+      const p = poiOf(id);
+      if (p) overlay.addedPois.push(structuredClone(p));
+    }
+    for (const id of modifiedPoiIds) {
+      if (addedPoiIds.has(id) || deletedPoiIds.has(id)) continue;
+      const p = poiOf(id);
+      if (p) overlay.modifiedPois.push(structuredClone(p));
+    }
     return overlay;
   };
 
@@ -85,13 +128,18 @@ export function createBuildingEditor(
     options.onOverlayChange?.(getOverlay());
   };
 
+  const refreshFor = (command: Command): void => {
+    if (command.refresh === 'pois') renderer.refreshPois();
+    else renderer.refreshBuildings();
+  };
+
   const commit = (command: Command): void => {
     command.apply();
     history.splice(historyIndex + 1);
     history.push(command);
     if (history.length > HISTORY_CAP) history.shift();
     historyIndex = history.length - 1;
-    renderer.refreshBuildings();
+    refreshFor(command);
     notify();
   };
 
@@ -109,6 +157,31 @@ export function createBuildingEditor(
       revert() {
         replaceBuildingInWorld(world, structuredClone(before));
         // Stays in modifiedIds — the snapshot equals the original again, harmless.
+      },
+    };
+  };
+
+  /** Replace a POI's data in place (position may have moved chunks). */
+  const replacePoiInWorld = (p: PoiInfo): void => {
+    removePoiFromWorld(world, p.id);
+    addPoiToWorld(world, p);
+  };
+
+  /** Snapshot-swap command for any mutation of an existing POI. */
+  const mutatePoiCommand = (label: string, id: string, mutate: (p: PoiInfo) => void): Command => {
+    const before = structuredClone(poiOf(id)!);
+    const after = structuredClone(before);
+    mutate(after);
+    return {
+      label,
+      refresh: 'pois',
+      apply() {
+        replacePoiInWorld(structuredClone(after));
+        modifiedPoiIds.add(id);
+      },
+      revert() {
+        replacePoiInWorld(structuredClone(before));
+        // Stays in modifiedPoiIds — the snapshot equals the original again, harmless.
       },
     };
   };
@@ -151,7 +224,7 @@ export function createBuildingEditor(
   };
 
   const onPointerDown = (e: PointerEvent): void => {
-    if (!state.enabled || state.addMode || e.button !== 0) return;
+    if (!state.enabled || state.addMode || state.poiMode || e.button !== 0) return;
     const hit = renderer.pickObject({ x: e.clientX, y: e.clientY });
     if (!hit || hit.objectId !== renderer.getSelected()) return;
     const b = buildingOf(hit.objectId);
@@ -168,6 +241,39 @@ export function createBuildingEditor(
   };
 
   const onPointerUp = (e: PointerEvent): void => {
+    if (state.enabled && state.poiMode && e.button === 0) {
+      const g = renderer.pickGround({ x: e.clientX, y: e.clientY });
+      if (g) {
+        poiCounter += 1;
+        const id = `poi:user:${poiCounter}`;
+        const poi: PoiInfo = {
+          id,
+          name: `標註 ${poiCounter}`,
+          icon: 'flag',
+          position: { x: g.x, y: g.y, z: g.z },
+          tags: [],
+          source: 'user-defined',
+        };
+        commit({
+          label: 'add poi',
+          refresh: 'pois',
+          apply() {
+            addPoiToWorld(world, structuredClone(poi));
+            addedPoiIds.add(id);
+            deletedPoiIds.delete(id);
+          },
+          revert() {
+            removePoiFromWorld(world, id);
+            addedPoiIds.delete(id);
+          },
+        });
+        state.poiMode = false;
+        renderer.setSelected(id);
+        notify();
+      }
+      return;
+    }
+
     if (state.enabled && state.addMode && e.button === 0) {
       const g = renderer.pickGround({ x: e.clientX, y: e.clientY });
       if (g) {
@@ -236,6 +342,7 @@ export function createBuildingEditor(
       state.enabled = v;
       if (!v) {
         state.addMode = false;
+        state.poiMode = false;
         dragging = null;
         ghost.visible = false;
         renderer.setEditorDragging(false);
@@ -301,22 +408,73 @@ export function createBuildingEditor(
 
     setAddMode(v) {
       state.addMode = v;
+      if (v) state.poiMode = false;
       notify();
+    },
+
+    getPoi: (id) => poiOf(id),
+
+    setPoiMode(v) {
+      state.poiMode = v;
+      if (v) state.addMode = false;
+      notify();
+    },
+
+    renamePoi(id, name, description) {
+      if (!poiOf(id)) return;
+      commit(
+        mutatePoiCommand('rename poi', id, (p) => {
+          p.name = name;
+          if (description !== undefined) p.description = description;
+        }),
+      );
+    },
+
+    setPoiIcon(id, icon) {
+      if (!poiOf(id)) return;
+      commit(
+        mutatePoiCommand('set poi icon', id, (p) => {
+          p.icon = icon;
+        }),
+      );
+    },
+
+    deletePoi(id) {
+      const snapshot = structuredClone(poiOf(id));
+      if (!snapshot) return;
+      const wasAdded = addedPoiIds.has(id);
+      renderer.setSelected(null);
+      commit({
+        label: 'delete poi',
+        refresh: 'pois',
+        apply() {
+          removePoiFromWorld(world, id);
+          deletedPoiIds.add(id);
+          if (wasAdded) addedPoiIds.delete(id);
+        },
+        revert() {
+          addPoiToWorld(world, structuredClone(snapshot));
+          deletedPoiIds.delete(id);
+          if (wasAdded) addedPoiIds.add(id);
+        },
+      });
     },
 
     undo() {
       if (historyIndex < 0) return;
-      history[historyIndex]!.revert();
+      const command = history[historyIndex]!;
+      command.revert();
       historyIndex -= 1;
-      renderer.refreshBuildings();
+      refreshFor(command);
       notify();
     },
 
     redo() {
       if (historyIndex >= history.length - 1) return;
       historyIndex += 1;
-      history[historyIndex]!.apply();
-      renderer.refreshBuildings();
+      const command = history[historyIndex]!;
+      command.apply();
+      refreshFor(command);
       notify();
     },
 

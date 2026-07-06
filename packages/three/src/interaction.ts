@@ -4,7 +4,7 @@ import type { BuildingsBuildResult } from './buildingsMesh';
 
 export type PickableInfo = {
   id: string;
-  type: 'building' | 'landmark';
+  type: 'building' | 'landmark' | 'poi';
   position: THREE.Vector3;
   /** Horizontal radius used for rings and focus distance. */
   radius: number;
@@ -15,10 +15,14 @@ export type PickableInfo = {
 
 export type MapObjectHit = {
   objectId: string;
-  objectType: 'building' | 'landmark';
+  objectType: 'building' | 'landmark' | 'poi';
   point: { x: number; y: number; z: number };
   distance: number;
 };
+
+/** POI pins are thin — picking/highlight radius is generous so they're easy to hit. */
+const POI_PICK_RADIUS = 4;
+const POI_PICK_HEIGHT = 6;
 
 export function buildPickableIndex(
   world: MapWorld,
@@ -26,6 +30,17 @@ export function buildPickableIndex(
 ): Map<string, PickableInfo> {
   const index = new Map<string, PickableInfo>();
   for (const obj of Object.values(world.objects)) {
+    if (obj.objectType === 'poi') {
+      const p = obj.poi;
+      index.set(p.id, {
+        id: p.id,
+        type: 'poi',
+        position: new THREE.Vector3(p.position.x, p.position.y, p.position.z),
+        radius: POI_PICK_RADIUS,
+        height: POI_PICK_HEIGHT,
+      });
+      continue;
+    }
     if (obj.objectType === 'building') {
       const b = obj.building;
       // Bounds over the whole footprint (works for arbitrary polygons too).
@@ -192,6 +207,7 @@ export function createPicker(
     buildings: BuildingsBuildResult | null;
     landmarks: THREE.Group | null;
     terrain: THREE.Object3D | null;
+    pois: THREE.Group | null;
   },
 ) {
   const raycaster = new THREE.Raycaster();
@@ -207,7 +223,7 @@ export function createPicker(
   };
 
   const pick = (clientX: number, clientY: number): MapObjectHit | null => {
-    const { buildings, landmarks } = getTargets();
+    const { buildings, landmarks, pois } = getTargets();
     raycaster.setFromCamera(toNdc(clientX, clientY), camera);
 
     let best: MapObjectHit | null = null;
@@ -263,6 +279,18 @@ export function createPicker(
         best = {
           objectId: hit.object.userData.objectId as string,
           objectType: 'landmark',
+          point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
+          distance: hit.distance,
+        };
+      }
+    }
+    if (pois) {
+      const hits = raycaster.intersectObject(pois, true);
+      const hit = hits.find((h) => h.object.userData.poiId);
+      if (hit && (!best || hit.distance < best.distance)) {
+        best = {
+          objectId: hit.object.userData.poiId as string,
+          objectType: 'poi',
           point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
           distance: hit.distance,
         };

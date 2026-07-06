@@ -172,7 +172,7 @@ e2e/              <i># smoke · interaction · ui · environment · visual · wo
   <tr><td>chunk</td><td>200×200 世界單位的地形塊,33×33 高度取樣(<code>CHUNK_RESOLUTION=32</code>)。chunk 同時登記落在其中的 object id。</td><td><code>core/world.ts</code></td></tr>
   <tr><td>preset</td><td>三種出廠地圖形態:<code>coastal-tech-city</code>(西南大陸+東北海灣+跨灣橋,SF 風)、<code>island-city</code>、<code>downtown-night-grid</code>。</td><td><code>core/presets.ts</code></td></tr>
   <tr><td><code>MapDirectives</code></td><td>Prompt-to-map 的中間層:LLM 或本地解析只輸出這組受控欄位(preset/環境/hilliness/密度/樓高…),<code>applyDirectives()</code> 負責 clamp 成合法 <code>MapConfig</code>。LLM 永遠碰不到原始 config。</td><td><code>core/directives.ts</code></td></tr>
-  <tr><td><code>EditOverlay</code></td><td>編輯器的持久化格式:<code>{modified[], added[], deleted[]}</code>,只存差異不存整個世界;重生成同一世界後以 <code>applyEditOverlay()</code> 重放。</td><td><code>core/edits.ts</code></td></tr>
+  <tr><td><code>EditOverlay</code></td><td>編輯器的持久化格式(v2):建築 <code>{modified[], added[], deleted[]}</code> + POI <code>{addedPois[], modifiedPois[], deletedPois[]}</code>,只存差異;<code>normalizeOverlay()</code> 把舊 v1 資料(localStorage/草稿)無損遷移到 v2;重生成同一世界後以 <code>applyEditOverlay()</code> 重放。</td><td><code>core/edits.ts</code></td></tr>
   <tr><td>layer</td><td>渲染圖層 id(封閉 union <code>MapLayerId</code>):terrain / water / roads / buildings / trees / landmarks / labels / traffic。UI 圖層面板逐一開關。</td><td><code>core/types.ts</code></td></tr>
   <tr><td>quality</td><td>渲染品質開關:<code>'high'</code>(預設,含陰影)/<code>'low'</code>(無陰影、pixelRatio 1)。自動化環境(<code>navigator.webdriver</code>)預設 low;URL <code>?q=</code> 可強制。</td><td><code>three/renderer.ts</code></td></tr>
   <tr><td>世界座標慣例</td><td>原點在地圖中心;<strong>北 = −Z</strong>;<code>Vec2.y</code> 在 footprint/boundary 語境代表世界 Z。</td><td>全域慣例</td></tr>

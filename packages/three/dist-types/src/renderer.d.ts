@@ -9,7 +9,7 @@ export type MapEngineEvents = {
     };
     'object:selected': {
         objectId: string;
-        objectType: 'building' | 'landmark';
+        objectType: 'building' | 'landmark' | 'poi';
     };
     'object:cleared': Record<string, never>;
     'camera:changed': {
@@ -57,6 +57,8 @@ export interface ThreeMapRenderer {
     } | null;
     /** Rebuild building meshes + picking + collision after world edits. */
     refreshBuildings(): void;
+    /** Rebuild POI pins + picking after world edits. */
+    refreshPois(): void;
     /** Pause camera controls and click-selection during editor drags. */
     setEditorDragging(v: boolean): void;
     /** Project a world position to canvas pixel coordinates. */

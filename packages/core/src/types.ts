@@ -30,6 +30,20 @@ export type BuildingInfo = {
   metadata?: Record<string, string | number | boolean>;
 };
 
+export type PoiIcon = 'flag' | 'quest' | 'resource' | 'danger' | 'note';
+
+export type PoiInfo = {
+  /** 'poi:user:{n}' (editor) or 'poi:{source}:{id}' (future import). */
+  id: string;
+  name: string;
+  description?: string;
+  icon: PoiIcon;
+  /** y = ground height sampled at placement time. */
+  position: Vec3;
+  tags: string[];
+  source: 'user-defined' | 'imported';
+};
+
 export type LandmarkKind = 'bridge' | 'tower' | 'stadium' | 'pier' | 'park' | 'island';
 
 export type LandmarkInfo = {
@@ -96,12 +110,13 @@ export type MapObject =
   | { objectType: 'building'; id: string; building: BuildingInfo }
   | { objectType: 'landmark'; id: string; landmark: LandmarkInfo }
   | {
-      objectType: 'tree' | 'poi';
+      objectType: 'tree';
       id: string;
       name: string;
       position: Vec3;
       tags: string[];
-    };
+    }
+  | { objectType: 'poi'; id: string; poi: PoiInfo };
 
 export type TerrainConfig = {
   /** Maximum terrain height above sea level in world units. */
@@ -175,4 +190,5 @@ export type MapLayerId =
   | 'landmarks'
   | 'labels'
   | 'trees'
+  | 'pois'
   | 'traffic';

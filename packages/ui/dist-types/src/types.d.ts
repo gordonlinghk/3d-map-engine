@@ -1,4 +1,4 @@
-import type { MapLayerId, MapWorld } from '@map-engine/core';
+import type { MapLayerId, MapWorld, PoiIcon } from '@map-engine/core';
 /**
  * Structural interface of the renderer used by the UI. `ThreeMapRenderer`
  * satisfies it — the UI package deliberately avoids importing Three.js.
@@ -73,6 +73,7 @@ export interface BuildingEditorLike {
     getState(): {
         enabled: boolean;
         addMode: boolean;
+        poiMode: boolean;
         canUndo: boolean;
         canRedo: boolean;
         tick: number;
@@ -89,6 +90,16 @@ export interface BuildingEditorLike {
     rotate(id: string, degrees: number): void;
     deleteBuilding(id: string): void;
     setAddMode(v: boolean): void;
+    getPoi(id: string): {
+        id: string;
+        name: string;
+        description?: string;
+        icon: PoiIcon;
+    } | null;
+    setPoiMode(v: boolean): void;
+    renamePoi(id: string, name: string, description?: string): void;
+    setPoiIcon(id: string, icon: PoiIcon): void;
+    deletePoi(id: string): void;
     undo(): void;
     redo(): void;
 }

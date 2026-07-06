@@ -3,7 +3,7 @@ import type { MapWorld } from '@map-engine/core';
 import type { BuildingsBuildResult } from './buildingsMesh';
 export type PickableInfo = {
     id: string;
-    type: 'building' | 'landmark';
+    type: 'building' | 'landmark' | 'poi';
     position: THREE.Vector3;
     /** Horizontal radius used for rings and focus distance. */
     radius: number;
@@ -13,7 +13,7 @@ export type PickableInfo = {
 };
 export type MapObjectHit = {
     objectId: string;
-    objectType: 'building' | 'landmark';
+    objectType: 'building' | 'landmark' | 'poi';
     point: {
         x: number;
         y: number;
@@ -35,6 +35,7 @@ export declare function createPicker(camera: THREE.Camera, domElement: HTMLEleme
     buildings: BuildingsBuildResult | null;
     landmarks: THREE.Group | null;
     terrain: THREE.Object3D | null;
+    pois: THREE.Group | null;
 }): {
     pick: (clientX: number, clientY: number) => MapObjectHit | null;
     pickGround: (clientX: number, clientY: number) => THREE.Vector3 | null;

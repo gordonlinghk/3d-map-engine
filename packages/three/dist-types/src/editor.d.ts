@@ -1,8 +1,9 @@
-import type { BuildingInfo, EditOverlay, MapWorld } from '@map-engine/core';
+import type { BuildingInfo, EditOverlay, MapWorld, PoiIcon, PoiInfo } from '@map-engine/core';
 import type { ThreeMapRenderer } from './renderer';
 export type EditorState = {
     enabled: boolean;
     addMode: boolean;
+    poiMode: boolean;
     canUndo: boolean;
     canRedo: boolean;
     /** Bumped on every change so UIs can re-render. */
@@ -18,6 +19,11 @@ export type BuildingEditor = {
     rotate(id: string, degrees: number): void;
     deleteBuilding(id: string): void;
     setAddMode(v: boolean): void;
+    getPoi(id: string): PoiInfo | null;
+    setPoiMode(v: boolean): void;
+    renamePoi(id: string, name: string, description?: string): void;
+    setPoiIcon(id: string, icon: PoiIcon): void;
+    deletePoi(id: string): void;
     undo(): void;
     redo(): void;
     getOverlay(): EditOverlay;

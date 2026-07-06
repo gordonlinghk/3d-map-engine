@@ -7,6 +7,7 @@ import { buildRoadsMesh } from './roadMesh';
 import { buildBuildingsGroup, type BuildingsBuildResult } from './buildingsMesh';
 import { buildTreesGroup } from './treesMesh';
 import { buildLandmarksGroup } from './landmarksGroup';
+import { buildPoisGroup } from './poisGroup';
 import { buildStreetLights, type StreetLightsResult } from './streetLights';
 import { buildFlatAreas } from './flatAreas';
 import { buildStars } from './sky';
@@ -28,7 +29,7 @@ export type EnvironmentMode = 'day' | 'golden-hour' | 'night';
 
 export type MapEngineEvents = {
   'object:hover': { objectId: string | null };
-  'object:selected': { objectId: string; objectType: 'building' | 'landmark' };
+  'object:selected': { objectId: string; objectType: 'building' | 'landmark' | 'poi' };
   'object:cleared': Record<string, never>;
   'camera:changed': { position: { x: number; y: number; z: number }; mode: CameraMode };
   'world:loaded': { worldId: string };
@@ -58,6 +59,8 @@ export interface ThreeMapRenderer {
   pickGround(pointer: { x: number; y: number }): { x: number; y: number; z: number } | null;
   /** Rebuild building meshes + picking + collision after world edits. */
   refreshBuildings(): void;
+  /** Rebuild POI pins + picking after world edits. */
+  refreshPois(): void;
   /** Pause camera controls and click-selection during editor drags. */
   setEditorDragging(v: boolean): void;
   /** Project a world position to canvas pixel coordinates. */
@@ -152,6 +155,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
   let currentWorld: MapWorld | null = null;
   let buildingsResult: BuildingsBuildResult | null = null;
   let landmarksGroup: THREE.Group | null = null;
+  let poisGroup: THREE.Group | null = null;
   let simulation: SimulationLayer | null = null;
   let streetLights: StreetLightsResult | null = null;
   let waterMesh: THREE.Mesh | null = null;
@@ -166,6 +170,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
     buildings: buildingsResult,
     landmarks: landmarksGroup,
     terrain: layerGroups.get('terrain') ?? null,
+    pois: poisGroup,
   }));
 
   let environment: EnvironmentMode = 'day';
@@ -382,6 +387,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       buildingsResult = buildBuildingsGroup(world);
       const trees = buildTreesGroup(world);
       landmarksGroup = buildLandmarksGroup(world);
+      poisGroup = buildPoisGroup(world);
       simulation?.dispose();
       simulation = createSimulationLayer(world);
       streetLights = buildStreetLights(world);
@@ -394,6 +400,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       layerGroups.set('buildings', buildingsResult.group);
       layerGroups.set('trees', trees);
       layerGroups.set('landmarks', landmarksGroup);
+      layerGroups.set('pois', poisGroup);
       layerGroups.set('traffic', simulation.group);
       worldRoot.add(
         terrain,
@@ -402,6 +409,7 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
         buildingsResult.group,
         trees,
         landmarksGroup,
+        poisGroup,
         simulation.group,
         streetLights.group,
         stars,
@@ -457,6 +465,26 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
       worldRoot.add(buildingsResult.group);
       pickables = buildPickableIndex(currentWorld, landmarksGroup);
       rig.setColliders(createColliderIndex(currentWorld));
+      // Re-apply (or clear) the selection highlight against fresh pickables.
+      if (selectedId && !pickables.has(selectedId)) {
+        setSelected(null);
+      } else {
+        highlights?.setSelected(selectedId ? (pickables.get(selectedId) ?? null) : null);
+      }
+      setHovered(null);
+    },
+
+    refreshPois(): void {
+      if (!currentWorld || !worldRoot || !landmarksGroup) return;
+      const old = poisGroup;
+      if (old) {
+        worldRoot.remove(old);
+        disposeObject(old);
+      }
+      poisGroup = buildPoisGroup(currentWorld);
+      layerGroups.set('pois', poisGroup);
+      worldRoot.add(poisGroup);
+      pickables = buildPickableIndex(currentWorld, landmarksGroup);
       // Re-apply (or clear) the selection highlight against fresh pickables.
       if (selectedId && !pickables.has(selectedId)) {
         setSelected(null);

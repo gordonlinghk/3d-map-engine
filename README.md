@@ -20,7 +20,7 @@ Demo URL parameters: `?seed=<any-string>&preset=coastal-tech-city|island-city|do
 
 ### Editor mode ✏️
 
-Toggle ✏️ in the toolbar: click a building to rename it, change floors, rotate (±15°), delete, or drag it to a new spot; use ＋ Add to place new buildings anywhere. Full undo/redo (100 steps). Edits are saved to localStorage per world and re-applied on reload; “Export world JSON” downloads the full serialized `MapWorld`. Works on procedural and OSM worlds alike.
+Toggle ✏️ in the toolbar: click a building to rename it, change floors, rotate (±15°), delete, or drag it to a new spot; use ＋ Add to place new buildings anywhere. **📍 POI** places named annotation pins (quest/resource/danger/note icons, optional description) — they're searchable, selectable, listed in the side panel, toggleable via the `pois` layer, and persist through autosave/drafts like every other edit. Full undo/redo (100 steps). Edits are saved to localStorage per world and re-applied on reload; “Export world JSON” downloads the full serialized `MapWorld`. Works on procedural and OSM worlds alike.
 
 **Drafts 💾** — “Save draft” writes a portable `.mapdraft.json` file (edits + how to rebuild the base world: procedural worlds store their seed/directives recipe, OSM worlds embed a full snapshot so upstream data drift can’t break the draft). “Open draft” restores it — on any machine, any later day — and drops you straight back into edit mode to continue. On Chromium browsers repeat saves overwrite the same file via the File System Access API; elsewhere each save downloads a fresh copy. localStorage autosave still runs alongside as a crash safety net.
 

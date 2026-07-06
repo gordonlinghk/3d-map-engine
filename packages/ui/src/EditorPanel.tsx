@@ -31,11 +31,21 @@ export function EditorPanel({
 
   const editorState = editor.getState();
   const building = selectedId ? editor.getBuilding(selectedId) : null;
+  const poi = selectedId && !building ? editor.getPoi(selectedId) : null;
   const [nameDraft, setNameDraft] = useState(building?.name ?? '');
   const buildingName = building?.name ?? '';
   useEffect(() => {
     setNameDraft(buildingName);
   }, [selectedId, buildingName]);
+
+  const [poiNameDraft, setPoiNameDraft] = useState(poi?.name ?? '');
+  const [poiDescDraft, setPoiDescDraft] = useState(poi?.description ?? '');
+  const poiName = poi?.name ?? '';
+  const poiDesc = poi?.description ?? '';
+  useEffect(() => {
+    setPoiNameDraft(poiName);
+    setPoiDescDraft(poiDesc);
+  }, [selectedId, poiName, poiDesc]);
 
   return (
     <div className="atlas-info" data-testid="editor-panel">
@@ -62,14 +72,26 @@ export function EditorPanel({
           >
             ＋ Add
           </button>
+          <button
+            data-testid="editor-poi"
+            style={{ ...btn, background: editorState.poiMode ? '#5b4bd6' : 'rgba(0,0,0,0.08)', color: editorState.poiMode ? '#fff' : undefined }}
+            onClick={() => editor.setPoiMode(!editorState.poiMode)}
+          >
+            📍 POI
+          </button>
         </div>
         {editorState.addMode && (
           <p className="desc" data-testid="editor-add-hint">
             Click anywhere on the ground to place a new building.
           </p>
         )}
+        {editorState.poiMode && (
+          <p className="desc" data-testid="editor-poi-hint">
+            Click anywhere on the ground to place a new POI marker.
+          </p>
+        )}
 
-        {!building && !editorState.addMode && (
+        {!building && !poi && !editorState.addMode && !editorState.poiMode && (
           <p className="desc">
             Click a building to edit it — drag the selected building to move it. Changes are saved
             in your browser automatically.
@@ -128,6 +150,74 @@ export function EditorPanel({
 
             <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
               Drag the highlighted building on the map to move it.
+            </div>
+          </div>
+        )}
+
+        {poi && (
+          <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-dim)' }}>NAME</span>
+              <input
+                data-testid="poi-name"
+                value={poiNameDraft}
+                onChange={(e) => setPoiNameDraft(e.target.value)}
+                onBlur={() => {
+                  if (poiNameDraft.trim() && (poiNameDraft !== poi.name || poiDescDraft !== (poi.description ?? ''))) {
+                    editor.renamePoi(poi.id, poiNameDraft.trim(), poiDescDraft);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                }}
+                style={{ padding: '7px 9px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)', fontSize: 13 }}
+              />
+            </label>
+
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-dim)' }}>ICON</span>
+              <select
+                data-testid="poi-icon"
+                value={poi.icon}
+                onChange={(e) => editor.setPoiIcon(poi.id, e.target.value as typeof poi.icon)}
+                style={{ padding: '7px 9px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)', fontSize: 13 }}
+              >
+                <option value="flag">🚩 Flag</option>
+                <option value="quest">⭐ Quest</option>
+                <option value="resource">🌾 Resource</option>
+                <option value="danger">⚠️ Danger</option>
+                <option value="note">📝 Note</option>
+              </select>
+            </label>
+
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-dim)' }}>
+                DESCRIPTION(可選)
+              </span>
+              <input
+                data-testid="poi-desc"
+                value={poiDescDraft}
+                onChange={(e) => setPoiDescDraft(e.target.value)}
+                onBlur={() => {
+                  if (poiNameDraft.trim() && (poiNameDraft !== poi.name || poiDescDraft !== (poi.description ?? ''))) {
+                    editor.renamePoi(poi.id, poiNameDraft.trim(), poiDescDraft);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                }}
+                style={{ padding: '7px 9px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)', fontSize: 13 }}
+              />
+            </label>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                data-testid="poi-delete"
+                style={{ ...btn, marginLeft: 'auto', background: 'rgba(179,56,44,0.12)', color: '#b3382c' }}
+                onClick={() => editor.deletePoi(poi.id)}
+              >
+                🗑 Delete
+              </button>
             </div>
           </div>
         )}

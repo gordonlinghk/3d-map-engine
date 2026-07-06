@@ -1,5 +1,5 @@
 import type { EditOverlay } from './edits';
-import { emptyOverlay } from './edits';
+import { emptyOverlay, normalizeOverlay } from './edits';
 import type { MapDirectives } from './directives';
 import type { MapWorld, SerializedMap } from './types';
 import { SERIALIZATION_VERSION } from './types';
@@ -53,10 +53,6 @@ export function createDraft(opts: {
   };
 }
 
-function isStringArray(v: unknown): v is string[] {
-  return Array.isArray(v) && v.every((x) => typeof x === 'string');
-}
-
 /** Parse and validate a draft file's JSON text. Throws with a readable reason. */
 export function parseDraft(json: string): MapDraft {
   let data: unknown;
@@ -92,13 +88,8 @@ export function parseDraft(json: string): MapDraft {
     throw new Error(`Unknown draft base kind "${String((base as { kind?: unknown }).kind)}".`);
   }
 
-  const o = d.overlay as Partial<EditOverlay> | undefined;
-  const overlay: EditOverlay = {
-    version: 1,
-    modified: Array.isArray(o?.modified) ? o.modified : [],
-    added: Array.isArray(o?.added) ? o.added : [],
-    deleted: isStringArray(o?.deleted) ? o.deleted : [],
-  };
+  // Older drafts embed a v1 overlay; normalizeOverlay migrates it to v2.
+  const overlay = normalizeOverlay(d.overlay);
 
   return {
     format: DRAFT_FORMAT,
@@ -132,5 +123,15 @@ export function sanitizeOverlayForWorld(
     else droppedIds.push(id);
   }
   out.added = overlay.added.map((b) => structuredClone(b));
+
+  for (const p of overlay.modifiedPois) {
+    if (world.objects[p.id]) out.modifiedPois.push(structuredClone(p));
+    else droppedIds.push(p.id);
+  }
+  for (const id of overlay.deletedPois) {
+    if (world.objects[id]) out.deletedPois.push(id);
+    else droppedIds.push(id);
+  }
+  out.addedPois = overlay.addedPois.map((p) => structuredClone(p));
   return { overlay: out, droppedIds };
 }

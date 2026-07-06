@@ -174,8 +174,11 @@ export function applyTerrainToWorld(
       let lowest = ground(b.position.x, b.position.z);
       for (const p of b.footprint) lowest = Math.min(lowest, ground(p.x, p.y));
       b.position.y = Math.max(lowest, world.config.waterLevel) - 0.2;
-    } else if (obj.objectType === 'tree' || obj.objectType === 'poi') {
+    } else if (obj.objectType === 'tree') {
       obj.position.y = Math.max(ground(obj.position.x, obj.position.z), world.config.waterLevel);
+    } else if (obj.objectType === 'poi') {
+      const p = obj.poi.position;
+      p.y = Math.max(ground(p.x, p.z), world.config.waterLevel);
     }
   }
   for (const node of world.roadGraph.nodes) {

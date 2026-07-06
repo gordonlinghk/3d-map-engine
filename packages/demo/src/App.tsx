@@ -5,6 +5,7 @@ import {
   createDraft,
   deserializeMap,
   generateWorld,
+  normalizeOverlay,
   overlayIsEmpty,
   parseDraft,
   sanitizeOverlayForWorld,
@@ -49,7 +50,7 @@ function editsKey(worldId: string): string {
 function loadOverlay(worldId: string): EditOverlay | undefined {
   try {
     const raw = localStorage.getItem(editsKey(worldId));
-    return raw ? (JSON.parse(raw) as EditOverlay) : undefined;
+    return raw ? normalizeOverlay(JSON.parse(raw)) : undefined;
   } catch {
     return undefined;
   }

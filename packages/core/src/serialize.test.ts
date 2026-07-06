@@ -42,6 +42,19 @@ function sampleWorld(): MapWorld {
           metadata: { founded: 2009, valuation: '~$10B', public: true },
         },
       },
+      'poi:user:1': {
+        objectType: 'poi',
+        id: 'poi:user:1',
+        poi: {
+          id: 'poi:user:1',
+          name: 'Meeting point',
+          description: 'gather here',
+          icon: 'flag',
+          position: { x: 30, y: 2, z: 40 },
+          tags: ['Custom'],
+          source: 'user-defined',
+        },
+      },
     },
     blocks: [{ i: 0, j: 0, center: { x: 20, y: 20 }, kind: 'downtown' }],
     districts: [

@@ -9,11 +9,14 @@ export { generateCity, type CityData, type TreeObject } from './city';
 export { COMPANIES, type CompanyInfo, type CompanyCategory } from './companies';
 export {
   addBuildingToWorld,
+  addPoiToWorld,
   applyEditOverlay,
   emptyOverlay,
   moveFootprint,
+  normalizeOverlay,
   overlayIsEmpty,
   removeBuildingFromWorld,
+  removePoiFromWorld,
   replaceBuildingInWorld,
   rotateFootprint,
   type EditOverlay,
