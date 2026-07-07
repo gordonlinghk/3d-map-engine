@@ -8,5 +8,5 @@ export default defineConfig({
   clean: true,
   target: 'es2022',
   tsconfig: 'tsconfig.build.json',
-  external: ['@map-engine/core', '@map-engine/game', 'three', /^three\//],
+  external: ['@map-engine/core'],
 });

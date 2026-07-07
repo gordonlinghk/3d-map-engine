@@ -12,6 +12,13 @@ export type CameraRig = {
     goHome(homePos: THREE.Vector3, homeTarget: THREE.Vector3): void;
     /** Smoothly fly the camera to look at a point. Resolves when done. */
     focusOn(point: THREE.Vector3, radius: number): Promise<void>;
+    /**
+     * Continuously chase a moving point. The provider is polled every frame; the
+     * viewing angle/distance in effect when following starts is preserved, and
+     * the camera smoothly tracks the point. Returning null (or passing null)
+     * stops following and restores orbit control.
+     */
+    setFollowTarget(get: (() => THREE.Vector3 | null) | null): void;
     update(dt: number): void;
     /** Fires (throttled) whenever the camera pose changes. */
     onChange(cb: (mode: CameraMode) => void): void;

@@ -16,6 +16,13 @@ export type CameraRig = {
   goHome(homePos: THREE.Vector3, homeTarget: THREE.Vector3): void;
   /** Smoothly fly the camera to look at a point. Resolves when done. */
   focusOn(point: THREE.Vector3, radius: number): Promise<void>;
+  /**
+   * Continuously chase a moving point. The provider is polled every frame; the
+   * viewing angle/distance in effect when following starts is preserved, and
+   * the camera smoothly tracks the point. Returning null (or passing null)
+   * stops following and restores orbit control.
+   */
+  setFollowTarget(get: (() => THREE.Vector3 | null) | null): void;
   update(dt: number): void;
   /** Fires (throttled) whenever the camera pose changes. */
   onChange(cb: (mode: CameraMode) => void): void;
@@ -60,6 +67,10 @@ export function createCameraRig(
     duration: number;
     resolve: () => void;
   } | null = null;
+
+  // Camera-follow: track a moving point while preserving the initial framing.
+  let followGet: (() => THREE.Vector3 | null) | null = null;
+  let followOffset: THREE.Vector3 | null = null;
 
   let changeCb: ((mode: CameraMode) => void) | null = null;
   let lastEmitAt = 0;
@@ -193,6 +204,33 @@ export function createCameraRig(
     }
   };
 
+  const stopFollow = (): void => {
+    followGet = null;
+    followOffset = null;
+    orbit.enabled = mode === 'orbit';
+    if (mode === 'orbit') orbit.update();
+    else syncAnglesFromCamera();
+  };
+
+  // Returns false when the target vanished (follow was auto-stopped).
+  const followStep = (dt: number): boolean => {
+    const p = followGet?.() ?? null;
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) {
+      stopFollow();
+      return false;
+    }
+    if (!followOffset) {
+      followOffset = camera.position.clone().sub(p);
+      // Degenerate framing (camera already on the point) → sensible default.
+      if (followOffset.lengthSq() < 1) followOffset.set(0, 60, 90);
+    }
+    const k = 1 - Math.exp(-dt / 0.18);
+    camera.position.lerp(p.clone().add(followOffset), k);
+    orbit.target.lerp(p, k);
+    camera.lookAt(orbit.target);
+    return true;
+  };
+
   const maybeEmitChange = (): void => {
     if (!changeCb) return;
     const now = performance.now();
@@ -214,6 +252,10 @@ export function createCameraRig(
     getMode: () => mode,
 
     setMode(next: CameraMode): void {
+      // Switching camera mode takes control back from any follow target.
+      // Route through stopFollow so orbit input is re-enabled even when the
+      // requested mode equals the current one (early return below).
+      if (followGet) stopFollow();
       if (next === mode) return;
       if (document.pointerLockElement === domElement && next !== 'walk') {
         document.exitPointerLock?.();
@@ -248,6 +290,7 @@ export function createCameraRig(
 
     goHome(homePos, homeTarget) {
       tween = null;
+      if (followGet) stopFollow();
       camera.position.copy(homePos);
       orbit.target.copy(homeTarget);
       if (mode === 'orbit') orbit.update();
@@ -258,6 +301,7 @@ export function createCameraRig(
     },
 
     focusOn(point, radius) {
+      if (followGet) stopFollow();
       const distance = THREE.MathUtils.clamp(radius * 5, 45, 320);
       const dir = camera.position.clone().sub(point);
       dir.y = 0;
@@ -296,12 +340,24 @@ export function createCameraRig(
           tween.resolve();
           tween = null;
         }
+      } else if (followGet) {
+        followStep(dt);
       } else if (mode === 'orbit') {
         orbit.update();
       } else {
         moveFreeLook(dt);
       }
       maybeEmitChange();
+    },
+
+    setFollowTarget(get) {
+      followGet = get;
+      followOffset = null;
+      if (get) {
+        orbit.enabled = false;
+      } else {
+        stopFollow();
+      }
     },
 
     onChange(cb) {

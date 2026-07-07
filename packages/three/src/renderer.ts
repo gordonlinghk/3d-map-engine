@@ -75,6 +75,12 @@ export interface ThreeMapRenderer {
   focusObject(objectId: string): Promise<void>;
   /** Fly the camera to a world XZ position (terrain height is sampled). */
   focusPoint(point: { x: number; z: number }, radius?: number): Promise<void>;
+  /**
+   * Continuously chase a moving point (e.g. a game unit). The provider is polled
+   * every frame; returning null, or passing null, stops following and restores
+   * orbit control. Used by `createGameView().followUnit`.
+   */
+  setFollowTarget(get: (() => { x: number; y: number; z: number } | null) | null): void;
   setSelected(objectId: string | null): void;
   getSelected(): string | null;
   setHovered(objectId: string | null): void;
@@ -518,6 +524,20 @@ export function createThreeMapRenderer(options: ThreeMapRendererOptions): ThreeM
 
     focusObject,
     focusPoint,
+
+    setFollowTarget(get): void {
+      if (!get) {
+        rig.setFollowTarget(null);
+        return;
+      }
+      const scratch = new THREE.Vector3();
+      rig.setFollowTarget(() => {
+        const p = get();
+        if (!p) return null;
+        return scratch.set(p.x, p.y, p.z);
+      });
+    },
+
     setSelected,
     getSelected: () => selectedId,
     setHovered,

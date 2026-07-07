@@ -54,6 +54,12 @@ Open the 🌍 World panel and describe a city in natural language (English or Ch
 
 Either way the result is a set of clamped `MapDirectives` (preset, environment, hilliness, density, max floors…) applied deterministically through `applyDirectives()` — shareable via the `cfg` URL parameter.
 
+### Game layer 🎮
+
+The [`@map-engine/game`](packages/game) package turns a `MapWorld` into a playable substrate — the foundation for building an actual game on the engine. It is pure, deterministic, zero-dependency TypeScript (no DOM/Three.js): **A\* pathfinding** over the road graph (optimal, deterministic routes), **units** that move along those routes hugging the terrain, and an **event-driven simulation** (`unit:spawned` / `waypoint` / `arrived` / `removed`). The Three.js binding `createGameView` (in `@map-engine/three`) renders a marker per unit and offers **camera-follow** — the camera smoothly chases a unit until you take control back (switch mode, go home, or focus something).
+
+Try it in the demo with **`?game=1`**: a few units spawn on the road network; click the ground to send the lead unit pathfinding there, and the camera can follow it. Everything is gated behind that flag, so the default demo is untouched.
+
 ### Controls
 
 | Input | Action |
@@ -78,7 +84,8 @@ Either way the result is a set of clamped `MapDirectives` (preset, environment, 
 | `@map-engine/core` | Data model, seeded RNG, noise, terrain/road/city generation, serialization | none (no DOM, no Three.js) |
 | `@map-engine/terrain` | Real-world elevation: terrarium DEM tiles (AWS) → chunk height grids | core |
 | `@map-engine/historical` | Hand-curated historical map packs (Three Kingdoms China) with provenance/confidence | core |
-| `@map-engine/three` | Three.js renderer adapter: meshes, camera rig, picking, highlights, environments, tour | three |
+| `@map-engine/game` | Game logic: A\* pathfinding over the road graph, deterministic unit movement, event-driven simulation | core (no DOM/Three.js) |
+| `@map-engine/three` | Three.js renderer adapter: meshes, camera rig, picking, highlights, environments, tour, unit view + camera follow | three, game |
 | `@map-engine/ui` | React demo UI: search, list, info panel, toolbar, minimap, HUD | react, zustand, fuse.js |
 | `@map-engine/demo` | Vite app wiring everything together | all of the above |
 
@@ -125,6 +132,26 @@ const restored = deserializeMap(JSON.parse(JSON.stringify(snapshot)));
 const tour = createTour(renderer, world);
 tour.start();
 ```
+
+### Game layer
+
+```ts
+import { createGameSimulation, nearestNode } from '@map-engine/game';
+import { createGameView } from '@map-engine/three';
+
+// Pure logic — testable without a renderer.
+const sim = createGameSimulation(world);
+const start = nearestNode(sim.index, 0, 0)!;
+const unit = sim.spawnUnit({ atNode: start, speed: 30, kind: 'soldier' });
+sim.on((e) => e.type === 'unit:arrived' && console.log(`${e.unitId} arrived`));
+sim.moveUnitTo(unit.id, { x: 400, y: -200 }); // Vec2: .x = world x, .y = world z
+
+// Three binding: renders + ticks the sim each frame, and drives camera-follow.
+const view = createGameView(renderer, sim);
+view.followUnit(unit.id);   // camera chases the unit; followUnit(null) to stop
+// view.dispose();          // detach + free everything
+```
+
 
 Core guarantees:
 

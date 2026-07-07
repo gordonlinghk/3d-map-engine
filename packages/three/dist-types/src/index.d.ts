@@ -9,3 +9,4 @@ export { buildBuildingsGroup, type BuildingsBuildResult } from './buildingsMesh'
 export { buildTreesGroup } from './treesMesh';
 export { buildLandmarksGroup } from './landmarksGroup';
 export { buildPoisGroup } from './poisGroup';
+export { createGameView, type GameView, type GameViewOptions } from './gameView';

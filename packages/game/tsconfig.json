@@ -8,5 +8,5 @@
     "outDir": "dist-types"
   },
   "include": ["src"],
-  "references": [{ "path": "../core" }, { "path": "../game" }]
+  "references": [{ "path": "../core" }]
 }

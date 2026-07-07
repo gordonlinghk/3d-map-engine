@@ -55,7 +55,7 @@
 ### Phase 1:專案骨架
 
 - **目的**:monorepo + 工具鏈 + 空 Three.js 場景,建立「每步皆可驗證」的基礎。
-- **做了什麼**:pnpm workspace(`packages/core|three|ui|demo`,後續增 `osm|terrain|historical`)、TypeScript project references(`tsconfig.base.json` + 各包 composite tsconfig)、ESLint flat config、Vitest、Playwright(desktop 1440×900 / large 1920×1080 / mobile 390×844 三個 project)、Vite + React demo 顯示空場景 + FPS。
+- **做了什麼**:pnpm workspace(`packages/core|three|ui|demo`,後續增 `osm|terrain|historical|game`)、TypeScript project references(`tsconfig.base.json` + 各包 composite tsconfig)、ESLint flat config、Vitest、Playwright(desktop 1440×900 / large 1920×1080 / mobile 390×844 三個 project)、Vite + React demo 顯示空場景 + FPS。
 - **關鍵細節**:
   - 各 library package 的 `main`/`exports` **直接指向 `src/index.ts`**——開發期由 Vite/Vitest 直接編譯源碼,無 build step。發佈欄位由 `publishConfig` 在 pack 時替換(見 B8)。
   - pnpm 11 會攔截依賴的 build scripts:`pnpm-workspace.yaml` 需要 `allowBuilds: { esbuild: true }`。
@@ -108,7 +108,7 @@
 - **易錯點**:Pages deploy 可能暫時性失敗(“try again later”,本項目發生過 3 次);**同一 run 重跑會產生兩個同名 artifact 而再失敗——正確做法是 `gh workflow run` 觸發全新 run**。
 - **驗證**:CI 綠 + live URL 截圖。
 
-### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10 → B11 → B12 → B13 →(數據來源調研)→ A5 → B14 → B15
+### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10 → B11 → B12 → B13 →(數據來源調研)→ A5 → B14 → B15 → C1
 
 | 代號 | 內容 | 關鍵檔案 | 一句話要點 |
 |---|---|---|---|
@@ -128,6 +128,7 @@
 | — | 數據來源調研 | `map-data-sources-research.md` | 多來源選型(無代碼變更):商業 API ToS 全禁提取;CHGIS 禁再散布;三國可行路徑 = 人工資料包 + 真實 DEM。**用戶定案:A5 → B14** |
 | A5 | 真實高程 | `packages/terrain/*`、`App.tsx`、`bake-city.ts`、`flatAreas.ts` | terrarium DEM(AWS 免 key,`h=R·256+G+B/256−32768`)→ `fetchElevationGrid`(zoom 按磁磚預算 ≤14、瀏覽器 canvas 解碼 / Node 注入 pngjs)→ `applyTerrainToWorld`:chunk 高度相對最低陸地、海(≤0.05m)→ −1.6 低於 waterLevel(**維港自動出現,v1 限制①③修復**)、水體下壓平湖床、建築沉至 footprint 最低點、道路節點重取樣(roadMesh/simulation/streetLights 自取樣自動跟隨);`world.attribution` 新 core 欄位 → SidePanel 渲染;`?flat=1`/`--flat` 退出、失敗退平地;**mock Overpass 的 e2e 必須 abort elevation route 防真網請求**。實測中環 −1.6~479.8m |
 | B14 | 三國 MVP | `packages/historical/*`、`App.tsx`、`Toolbar.tsx`、`renderer.ts`(fog) | 戰略尺度 **1 unit=1km**;資料包 = TS 常量(~50 城 attested/inferred/stylized 三級 confidence + 出處;黃河走古北道);`historicalToWorld`:真實 DEM(垂直 ×0.012 誇張、海→−2)+ 風格化城池(主殿=可搜尋 entry、category=勢力名;**城牆 type 必須 residential 否則塞爆列表**)+ 河流 ribbon 分段 carve + 路線→roadGraph;URL `?map=` + Toolbar ⚔️ select;草稿 sourceSlug=`hist:…`;**坑:fog 距離按 half=800 城市世界調的 → `fogScale=max(1, half/800)`,3000-unit 世界否則全被霧吞** |
+| C1 | 遊戲邏輯層 SDK | **新包 `packages/game/*`**(零 DOM/Three)、`three/gameView.ts`、`three/cameraRig.ts`+`renderer.ts`(鏡頭跟隨)、`demo/App.tsx`(`?game=1`)、`e2e/game.spec.ts` | **以多 agent workflow 交付**(Opus 寫 A*/模擬核心 + 鏡頭跟隨、Sonnet 寫 gameView 綁定 + demo/e2e、Haiku 全路徑 QA、獨立 clean-session Opus 終審);`@map-engine/game` = **A\* 尋路**(道路圖無向、cost=幾何 XZ 長度 → 直線啟發式 admissible/consistent → 最短路;二元堆積、tie-break 確定性)+ **單位模擬**(`tick(dt)` 沿路徑推進、貼地取樣、heading、事件 spawned/waypoint/arrived/removed;flush 具重入保護保證嚴格發射順序;全確定性)+ `buildGraphIndex`/`nearestNode`/`findPath`;`three/createGameView` = 每單位一 marker、每幀 tick sim + 同步、`followUnit`;**鏡頭跟隨**新增 `cameraRig.setFollowTarget` + `renderer.setFollowTarget`(update 分支序 tween > follow > orbit/free;**坑:follow 會關 orbit.enabled → setMode/goHome/focusOn 取消跟隨必須經 `stopFollow()` 還原,否則相機鎖死**——終審抓到並修);demo `?game=1` 全 gated(單位生在同一連通分量保證互可達,點地面 → lead 單位尋路);單元測試 23(pathfinding 10 + simulation 13) |
 | B15 | POI 註記系統 | `core/edits.ts`(overlay v2)、`three/poisGroup.ts`+`editor.ts`、`ui/EditorPanel.tsx` | **首次以多 agent workflow 交付**(Opus 核心遷移/Sonnet 常規/Haiku QA/獨立 Opus 終審);`PoiInfo` + MapObject poi 變體 + 圖層 'pois';**EditOverlay v1→v2**(+addedPois/modifiedPois/deletedPois),`normalizeOverlay()` 讓舊 localStorage/草稿無損遷移(所有讀取入口必須經它);編輯器 📍 poiMode(與 addMode 互斥)、rename/icon/delete 全走 Command(undo/redo 自然生效)、`renderer.refreshPois()`;POI 進 entries(kind 'poi')可搜尋。**坑:zero-POI 世界不可 eager 建共享幾何(disposeObject 只釋放掛在 mesh 上的資源)** |
 
 ---
@@ -153,16 +154,18 @@ graph TD
   osm["@map-engine/osm<br/>(Overpass/geocoding/烘焙)"] --> core
   terrain["@map-engine/terrain<br/>(terrarium DEM)"] --> core
   hist["@map-engine/historical<br/>(三國資料包)"] --> core
+  game["@map-engine/game<br/>(A* 尋路/單位模擬;零 DOM/Three)"] --> core
   three["@map-engine/three"] --> core
+  three --> game
   three -. peer .-> threejs["three.js"]
   ui["@map-engine/ui"] --> core
   ui -. peer .-> react["react"]
   ui -. "MapRendererLike<br/>(結構型,無 import)" .-> three
-  demo["@map-engine/demo (private)"] --> core & osm & terrain & hist & three & ui
+  demo["@map-engine/demo (private)"] --> core & osm & terrain & hist & game & three & ui
   demo --> sdk["@anthropic-ai/sdk<br/>(prompt-to-map)"]
 ```
 
-**規律:資料來源包(osm/terrain/historical)只依賴 core、互不依賴**;需要組合時(例如三國 = historical + terrain 的 elevation sampler)由 demo/調用方注入函數,不建立包間依賴。
+**規律:資料來源包(osm/terrain/historical)只依賴 core、互不依賴**;需要組合時(例如三國 = historical + terrain 的 elevation sampler)由 demo/調用方注入函數,不建立包間依賴。**例外:`game` 是純邏輯層(只依賴 core、零 DOM/Three),但 `three` 直接依賴 `game`**——因為 `three/gameView.ts`(單位渲染 + 鏡頭跟隨)是 game 的 Three 綁定。純邏輯(A*/單位/事件)留在 game 可在 Node 單元測試,渲染綁定放 three,分工同 core↔three。
 
 ### 3.3 影響後續擴展的設計決策
 
@@ -185,8 +188,8 @@ graph TD
 | `BuildingInfo` 欄位 | serialize 測試、`buildingsMesh`、`interaction.buildPickableIndex`、`collision`、`ui/entries`、`InfoPanel`、`editor`、OSM convert、historical convert |
 | 地形形狀/preset | `terrain.ts` 遮罩、`world.test.ts` land-ratio 斷言、道路 `isLand` 判定、城市街區可建性、minimap 底圖 |
 | chunk 高度(任何來源) | 一切自動跟隨(sampler 派生):道路、車流、街燈、Walk、minimap;但**建築/樹的 `position.y` 是存量資料,要主動重取樣**(參考 `applyTerrainToWorld` Pass 4) |
-| 道路圖結構 | `roadMesh`、`simulation`(車)、`streetLights`、OSM convert、historical convert 的 route 映射 |
-| renderer 公開 API | `ThreeMapRenderer` 介面、`ui/types.ts` 的 `MapRendererLike`、demo `__mapEngine` 消費者(e2e 大量使用) |
+| 道路圖結構 | `roadMesh`、`simulation`(車)、`streetLights`、OSM convert、historical convert 的 route 映射、**`game` 的 A* 尋路(`buildGraphIndex`/`findPath`)** |
+| renderer 公開 API | `ThreeMapRenderer` 介面、`ui/types.ts` 的 `MapRendererLike`、demo `__mapEngine` 消費者(e2e 大量使用);**新增公開方法後同步這三處**(如 C1 的 `setFollowTarget` 供 `gameView` 使用) |
 | 環境模式 | `applyEnvironment`(光/霧/水色;注意 fogScale)、`buildingsMesh.setNightMode`、`streetLights`、`stars`、`landmarksGroup.userData.setNight`、ui `ENV_ORDER` |
 | URL 參數 scheme | boot 分支順序(pendingDraft > map > world > city/bbox > procedural)、`drafts.ts` 的 sourceSlug↔URL 映射、`editsKey`(含 cfg)、分享連結相容性 |
 | entries 收錄規則(`ui/entries.ts`) | 哪些建築進列表/搜尋:company metadata、type `public`、`imported`+tag `Named`。新來源的「可搜尋物件」要滿足其一;**不想進列表就避開這三者**(三國城牆用 type residential 的原因) |
@@ -376,8 +379,8 @@ pnpm dev
 
 ### 7.2 動手前檢查
 
-- [ ] `pnpm install && pnpm typecheck && pnpm lint && pnpm test` 全綠(基線 **90 unit / 13 檔**)
-- [ ] `npx playwright install chromium`(首次)後 `npx playwright test --workers=2` 全綠(基線全套 3 viewport **105 passed + 12 skipped**;本機別開太多 workers,見 §5.5)
+- [ ] `pnpm install && pnpm typecheck && pnpm lint && pnpm test` 全綠(基線 **113 unit / 15 檔**;C1 增 game 包的 pathfinding + simulation 共 23)
+- [ ] `npx playwright install chromium`(首次)後 `npx playwright test --workers=2` 全綠(**18 個 spec 檔**,3 viewport;本機別開太多 workers,見 §5.5)
 - [ ] 確認要改的部分在 §3.4 速查表中會牽動誰
 - [ ] 若改生成邏輯:想清楚舊 `EditOverlay`(localStorage)、`.mapdraft.json` 草稿與舊分享 URL(cfg/seed/bbox/map)是否仍能載入
 

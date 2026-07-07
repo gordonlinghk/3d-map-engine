@@ -1,16 +1,16 @@
 {
-  "name": "@map-engine/three",
+  "name": "@map-engine/game",
   "version": "0.1.0",
-  "description": "Three.js renderer adapter for @map-engine/core — terrain/building/road meshes, orbit/fly/walk cameras, picking, environments, traffic simulation, tour.",
+  "description": "Game-logic layer for @map-engine/core — A* pathfinding over the road graph, deterministic unit movement and a lightweight event-driven simulation. Zero DOM/Three.js dependencies.",
   "license": "MIT",
   "author": "Gordon Ling",
   "homepage": "https://gordonlinghk.github.io/3d-map-engine/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gordonlinghk/3d-map-engine.git",
-    "directory": "packages/three"
+    "directory": "packages/game"
   },
-  "keywords": ["threejs", "procedural-generation", "3d", "map", "city", "renderer"],
+  "keywords": ["pathfinding", "a-star", "simulation", "game", "3d", "map"],
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -34,14 +34,6 @@
   },
   "sideEffects": false,
   "dependencies": {
-    "@map-engine/core": "workspace:*",
-    "@map-engine/game": "workspace:*"
-  },
-  "peerDependencies": {
-    "three": ">=0.170.0"
-  },
-  "devDependencies": {
-    "@types/three": "^0.180.0",
-    "three": "^0.180.0"
+    "@map-engine/core": "workspace:*"
   }
 }

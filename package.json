@@ -18,7 +18,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "lint": "eslint packages/*/src",
-    "typecheck": "tsc -b packages/core packages/osm packages/terrain packages/historical packages/three packages/ui packages/demo",
+    "typecheck": "tsc -b packages/core packages/osm packages/terrain packages/historical packages/game packages/three packages/ui packages/demo",
     "bake": "tsx scripts/bake-city.ts"
   },
   "devDependencies": {
