@@ -275,7 +275,7 @@ e2e/              <i># smoke · interaction · ui · environment · visual · wo
   <tr><td>terrain</td><td><code>buildTerrainGroup</code>(+<code>buildFlatAreas</code>)</td><td>每 chunk 一個高度網格 mesh,頂點色 = 街區 kind(<code>BLOCK_COLORS</code>)或高度帶;OSM 的水/綠多邊形平面也掛在此</td></tr>
   <tr><td>water</td><td><code>buildWaterMesh</code></td><td>大海平面 + 程序 ripple normal map(<code>userData.tick</code> 漂移 offset)</td></tr>
   <tr><td>roads</td><td><code>buildRoadsMesh</code></td><td>全部道路合併為單一 quad-strip geometry,沿 sampler 高度 +0.35;橋面恆定 waterLevel+7,紅色</td></tr>
-  <tr><td>buildings</td><td><code>buildBuildingsGroup</code></td><td>雙路徑:軸對齊矩形 → 4 個高度等級 InstancedMesh(窗戶 CanvasTexture);任意多邊形 → 單一合併 ExtrudeGeometry + <code>userData.faceRanges</code>(§10.3)。另含屋頂退台/天線 instanced。<code>setNightMode()</code> 切換夜間 emissive 貼圖</td></tr>
+  <tr><td>buildings</td><td><code>buildBuildingsGroup</code></td><td>多路徑:軸對齊矩形 → 4 個高度等級 InstancedMesh(窗戶 CanvasTexture);任意多邊形 → 單一合併 ExtrudeGeometry + <code>userData.faceRanges</code>;<code>style:'chinese'</code> → 多邊形 body + 合併歇山屋頂(亦帶 faceRanges)(§10.3)。另含屋頂退台/天線 instanced。<code>setNightMode()</code> 切換夜間 emissive 貼圖</td></tr>
   <tr><td>trees</td><td><code>buildTreesGroup</code></td><td>樹幹+樹冠兩個 InstancedMesh</td></tr>
   <tr><td>landmarks</td><td><code>buildLandmarksGroup</code></td><td>手工低模(吊橋=塔+三段 QuadraticBezier 纜索、電視塔、球場、碼頭、監獄島);<code>userData.setNight/tick</code> 控制夜光與警示燈閃爍</td></tr>
   <tr><td>traffic</td><td><code>createSimulationLayer</code></td><td>車(instanced,沿 road graph polyline,路口隨機續行)、渡輪(pier↔island 折返+浮沉)、飛機;<code>update(dt)</code> 由 renderer loop 驅動</td></tr>
@@ -370,7 +370,7 @@ on(event, handler): off             onFrame(cb): off           dispose()</code><
 <h3>10.2 高度取樣:chunk 是唯一真相</h3>
 <p><code>createWorldHeightSampler(world)</code> 對 chunk 高度網格<strong>雙線性插值</strong>,超出範圍才 fallback 地形函數。這讓道路、車流、街燈、Walk 貼地、地標朝向與<strong>渲染出來的地形 mesh 完全一致</strong>,而且 OSM 等「非程序生成」世界自動正確。<u>推論:想改地形高度,改 chunk heights,別想著只改 sampler。</u></p>
 
-<h3>10.3 建築渲染與 picking 的雙路徑</h3>
+<h3>10.3 建築渲染與 picking 的多路徑</h3>
 <div class="cols2">
 <div>
 <h4>軸對齊矩形(程序生成)</h4>
@@ -386,6 +386,7 @@ on(event, handler): off             onFrame(cb): off           dispose()</code><
 </div>
 </div>
 <p>分流判斷 <code>isAxisAlignedRect(footprint)</code> 在 <code>buildingsMesh.ts</code>。編輯器旋轉建築後 footprint 不再軸對齊,自動改走右邊路徑——這是兩個功能共用一條管線的例子。</p>
+<div class="callout"><span class="t">第三條路徑:中式建築(C2)</span><code>BuildingInfo.style === 'chinese'</code>(可選欄位,預設 modern)的建築<strong>改走多邊形 body 路徑</strong>(暖牆、無玻璃窗、經 faceRanges 可 pick),並疊加一個合併的**歇山/廡殿式屋頂 mesh**(<code>makeHipRoof</code>:base 依 footprint w/d、脊沿長軸、方形退化為攢尖、簷口外挑;瓦色青灰、牆色木紅/夯土;長條城牆按長寬比 gate 不加頂)。三國城池主殿+城牆用此風格。<strong>屋頂 mesh 亦帶 <code>faceRanges</code></strong>(id=主殿 id),picker 的 <code>resolveMerged()</code> 同時解析 body 與 roof——否則點屋頂(高於且外挑於牆身)會 miss 而取消選取(終審抓到的回退)。任何世界皆可用此欄位。</div>
 
 <h3>10.4 編輯器:命令 + overlay 雙層</h3>
 <p><strong>命令層</strong>(session 內):每個操作是 <code>{apply, revert}</code>,進 100 步歷史;commit / undo / redo 後一律 <code>refreshBuildings()</code>(重建 buildings group + pickables + colliders,並重掛選取高亮)。<strong>overlay 層</strong>(跨 session):editor 追蹤 modified/added/deleted id 集,任何變化即時導出 <code>EditOverlay</code> 交給 demo 存 localStorage;下次載入同一世界時先重放。匯出 JSON = <code>serializeMap(world)</code> 全量下載,可作遊戲存檔格式。</p>

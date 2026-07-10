@@ -9,6 +9,8 @@ export type BuildingsBuildResult = {
     instanceIndex: Map<THREE.InstancedMesh, string[]>;
     /** Merged extruded mesh for polygon footprints (OSM); picking via faceRanges. */
     polyMesh: THREE.Mesh | null;
+    /** Merged hip-roof mesh for chinese buildings; picking via faceRanges. */
+    roofMesh: THREE.Mesh | null;
     setNightMode: (night: boolean) => void;
 };
 export type FaceRange = {

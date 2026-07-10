@@ -14,11 +14,21 @@ export type MapObjectType =
 
 export type BuildingType = 'company' | 'residential' | 'landmark' | 'public' | 'transport';
 
+/**
+ * Architectural style, read by the renderer to pick geometry + materials.
+ * Defaults to 'modern' (flat-roof, glass facade) when omitted. 'chinese'
+ * renders warm walls with an overhanging pitched tiled roof — used by the
+ * historical map packs, but available to any world/source.
+ */
+export type BuildingStyle = 'modern' | 'chinese';
+
 export type BuildingInfo = {
   id: string;
   name: string;
   type: BuildingType;
   category?: string;
+  /** Architectural style; omitted = 'modern'. */
+  style?: BuildingStyle;
   description: string;
   districtId: string;
   position: Vec3;

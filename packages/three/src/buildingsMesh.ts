@@ -74,6 +74,8 @@ export type BuildingsBuildResult = {
   instanceIndex: Map<THREE.InstancedMesh, string[]>;
   /** Merged extruded mesh for polygon footprints (OSM); picking via faceRanges. */
   polyMesh: THREE.Mesh | null;
+  /** Merged hip-roof mesh for chinese buildings; picking via faceRanges. */
+  roofMesh: THREE.Mesh | null;
   setNightMode: (night: boolean) => void;
 };
 
@@ -97,6 +99,43 @@ const POLY_TINTS: Record<string, string[]> = {
   landmark: ['#d6d2c8'],
 };
 
+// Chinese-style walls: warm timber-red halls (type 'landmark') over rammed-earth
+// / grey-stone ramparts (type 'residential', used by historical city walls).
+const CHINESE_WALL_TINTS: Record<string, string[]> = {
+  landmark: ['#8f4a3c', '#9c5140', '#86423a', '#a25a45'],
+  residential: ['#b39a72', '#a98f66', '#9c8f79', '#b0a081'],
+};
+const CHINESE_WALL_DEFAULT = ['#a98f66'];
+
+// Roof tiles: period grey/blue-grey glazed tile with a little variation.
+const ROOF_TINTS = ['#39414d', '#333b47', '#414a57', '#2f3742', '#454d58'];
+
+function polyTintFor(b: BuildingInfo, idx: number): string {
+  const palette =
+    b.style === 'chinese'
+      ? (CHINESE_WALL_TINTS[b.type] ?? CHINESE_WALL_DEFAULT)
+      : (POLY_TINTS[b.type] ?? POLY_TINTS.company!);
+  return palette[(b.floors * 5 + idx) % palette.length]!;
+}
+
+/** Compact chinese buildings (halls) get a hip roof; long thin ones (walls) don't. */
+function isRoofEligible(b: BuildingInfo): boolean {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of b.footprint) {
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
+  }
+  const w = maxX - minX;
+  const d = maxY - minY;
+  const lo = Math.min(w, d);
+  return lo > 1e-3 && Math.max(w, d) / lo < 2.5;
+}
+
 /** One merged extruded geometry for all polygon-footprint buildings. */
 function buildPolygonBuildings(buildings: BuildingInfo[]): {
   mesh: THREE.Mesh;
@@ -115,8 +154,7 @@ function buildPolygonBuildings(buildings: BuildingInfo[]): {
     geo.translate(0, b.position.y - 0.3, 0);
     geo.deleteAttribute('uv');
 
-    const tints = POLY_TINTS[b.type] ?? POLY_TINTS.company!;
-    color.set(tints[(b.floors * 5 + idx) % tints.length]!);
+    color.set(polyTintFor(b, idx));
     const count = geo.attributes.position!.count;
     const colors = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
@@ -144,6 +182,114 @@ function buildPolygonBuildings(buildings: BuildingInfo[]): {
   return { mesh, material };
 }
 
+/**
+ * A hipped roof (廡殿/歇山-ish) sized to a w×d base, base plane at y=0 centred
+ * on the origin, rising to a ridge. Eaves overhang the walls; the ridge runs
+ * along the longer base axis (a pyramid when square). DoubleSide material is
+ * used downstream so triangle winding is irrelevant.
+ */
+function makeHipRoof(w: number, d: number): THREE.BufferGeometry {
+  const overhang = Math.max(0.4, Math.min(w, d) * 0.28);
+  const rH = Math.max(1.2, Math.min(w, d) * 0.6);
+  const hw = w / 2 + overhang;
+  const hd = d / 2 + overhang;
+
+  const pos: number[] = [];
+  type P = [number, number, number];
+  const tri = (a: P, b: P, c: P): void => {
+    pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+  };
+  const quad = (a: P, b: P, c: P, e: P): void => {
+    tri(a, b, c);
+    tri(a, c, e);
+  };
+  const c0: P = [-hw, 0, -hd];
+  const c1: P = [hw, 0, -hd];
+  const c2: P = [hw, 0, hd];
+  const c3: P = [-hw, 0, hd];
+
+  if (w >= d) {
+    const rx = Math.max(0, hw - hd);
+    const r0: P = [-rx, rH, 0];
+    const r1: P = [rx, rH, 0];
+    quad(c3, c2, r1, r0); // +Z long slope
+    quad(c1, c0, r0, r1); // -Z long slope
+    tri(c2, c1, r1); // +X hip end
+    tri(c0, c3, r0); // -X hip end
+  } else {
+    const rz = Math.max(0, hd - hw);
+    const r0: P = [0, rH, -rz];
+    const r1: P = [0, rH, rz];
+    quad(c1, c2, r1, r0); // +X long slope
+    quad(c3, c0, r0, r1); // -X long slope
+    tri(c2, c3, r1); // +Z hip end
+    tri(c0, c1, r0); // -Z hip end
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** One merged mesh of hip roofs for the roof-eligible chinese buildings. */
+function buildChineseRoofs(buildings: BuildingInfo[]): THREE.Mesh | null {
+  const eligible = buildings.filter(isRoofEligible);
+  if (eligible.length === 0) return null;
+  const geometries: THREE.BufferGeometry[] = [];
+  const ranges: FaceRange[] = [];
+  const color = new THREE.Color();
+  let faceOffset = 0;
+
+  eligible.forEach((b, idx) => {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const p of b.footprint) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    }
+    const geo = makeHipRoof(maxX - minX, maxY - minY);
+    // Overlap the wall top by a hair so roof and wall meet without a gap
+    // (body spans up to position.y + height - 0.3).
+    geo.translate(b.position.x, b.position.y + b.height - 0.35, b.position.z);
+
+    color.set(ROOF_TINTS[(b.floors + idx) % ROOF_TINTS.length]!);
+    const count = geo.attributes.position!.count;
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    // Roof faces resolve to the hall id so clicking the roof selects the hall
+    // (the roof is the hall's dominant, most-clickable silhouette).
+    const faces = count / 3; // non-indexed
+    ranges.push({ start: faceOffset, end: faceOffset + faces, id: b.id });
+    faceOffset += faces;
+    geometries.push(geo);
+  });
+
+  const merged = mergeGeometries(geometries, false);
+  for (const g of geometries) g.dispose();
+  if (!merged) return null;
+  const material = new THREE.MeshLambertMaterial({
+    vertexColors: true,
+    flatShading: true,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(merged, material);
+  mesh.name = 'buildings:roofs';
+  mesh.castShadow = true;
+  mesh.userData.faceRanges = ranges;
+  return mesh;
+}
+
 export function buildBuildingsGroup(world: MapWorld): BuildingsBuildResult {
   const group = new THREE.Group();
   group.name = 'buildings';
@@ -151,14 +297,26 @@ export function buildBuildingsGroup(world: MapWorld): BuildingsBuildResult {
 
   const buildings: BuildingInfo[] = [];
   const polygonBuildings: BuildingInfo[] = [];
+  const chineseBuildings: BuildingInfo[] = [];
   for (const obj of Object.values(world.objects)) {
     if (obj.objectType !== 'building') continue;
-    if (isAxisAlignedRect(obj.building.footprint)) buildings.push(obj.building);
-    else polygonBuildings.push(obj.building);
+    const b = obj.building;
+    if (b.style === 'chinese') {
+      // Route through the merged-polygon path: warm walls, no glass facade,
+      // pickable via faceRanges (no picker change) — plus a hip roof on top.
+      polygonBuildings.push(b);
+      chineseBuildings.push(b);
+    } else if (isAxisAlignedRect(b.footprint)) {
+      buildings.push(b);
+    } else {
+      polygonBuildings.push(b);
+    }
   }
 
   const poly = buildPolygonBuildings(polygonBuildings);
   if (poly) group.add(poly.mesh);
+  const roofs = buildChineseRoofs(chineseBuildings);
+  if (roofs) group.add(roofs);
 
   const byClass: BuildingInfo[][] = CLASSES.map(() => []);
   for (const b of buildings) byClass[classFor(b)]!.push(b);
@@ -291,5 +449,5 @@ export function buildBuildingsGroup(world: MapWorld): BuildingsBuildResult {
     });
   };
 
-  return { group, instanceIndex, polyMesh: poly?.mesh ?? null, setNightMode };
+  return { group, instanceIndex, polyMesh: poly?.mesh ?? null, roofMesh: roofs, setNightMode };
 }

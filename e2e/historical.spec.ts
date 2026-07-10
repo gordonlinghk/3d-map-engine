@@ -55,6 +55,51 @@ test('three kingdoms map loads with cities, factions and disclaimer', async ({ p
   await expect(page.getByTestId('side-panel')).toContainText('示意');
 });
 
+test('three kingdoms halls render the chinese building style (warm walls + roofs)', async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text());
+  });
+  page.on('pageerror', (err) => consoleErrors.push(String(err)));
+
+  await page.route('**/elevation-tiles-prod/**', (route) =>
+    route.fulfill({ body: HILL_PNG, contentType: 'image/png' }),
+  );
+  await page.goto('/?map=three-kingdoms');
+  await page.waitForFunction(
+    () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__mapEngine?.world?.id === 'hist:three-kingdoms',
+    undefined,
+    { timeout: 30_000 },
+  );
+
+  const { chengduStyle, roofMeshFound, roofMapsToHall } = await page.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const engine = (window as any).__mapEngine;
+    const chengdu = engine.world.objects['city:three-kingdoms:chengdu'];
+    let found = false;
+    let mapsToHall = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    engine.renderer.scene.traverse((o: any) => {
+      if (o.name === 'buildings:roofs') {
+        found = true;
+        // Roofs must carry face ranges keyed by hall id so clicking a roof
+        // selects its hall (not a deselecting dead-zone).
+        const ranges = o.userData?.faceRanges as Array<{ id: string }> | undefined;
+        mapsToHall = !!ranges?.some((r) => r.id.startsWith('city:'));
+      }
+    });
+    return { chengduStyle: chengdu?.building?.style, roofMeshFound: found, roofMapsToHall: mapsToHall };
+  });
+  expect(chengduStyle).toBe('chinese');
+  expect(roofMeshFound).toBe(true);
+  expect(roofMapsToHall).toBe(true);
+
+  // No console errors should occur while the chinese-style buildings + roofs load.
+  expect(consoleErrors).toEqual([]);
+});
+
 test('historical map is reachable from the world panel', async ({ page }) => {
   await page.route('**/elevation-tiles-prod/**', (route) =>
     route.fulfill({ body: HILL_PNG, contentType: 'image/png' }),

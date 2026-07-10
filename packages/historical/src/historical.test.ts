@@ -46,6 +46,10 @@ describe('historicalToWorld', () => {
     const walls = buildings.filter((b) => b.id.startsWith('wall:'));
     const walled = THREE_KINGDOMS.cities.filter((c) => c.kind !== 'site').length;
     expect(walls).toHaveLength(walled * 4);
+    // Halls and walls carry the chinese architectural style (pitched tiled roofs).
+    for (const b of [...halls, ...walls]) {
+      expect(b.objectType === 'building' && b.building.style).toBe('chinese');
+    }
     expect(world.roadGraph.edges.length).toBeGreaterThan(30);
     expect(world.waterPolygons!.length).toBeGreaterThan(30); // river ribbons
     expect(world.id).toBe('hist:three-kingdoms');

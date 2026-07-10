@@ -195,6 +195,7 @@ export function historicalToWorld(
       id: `city:${data.id}:${city.id}`,
       name: city.name,
       type: 'landmark',
+      style: 'chinese',
       category: faction?.name ?? '群雄',
       description: `${faction?.name ?? ''}${style.label} · ${CONFIDENCE_LABEL[city.confidence]}${
         city.modernName ? ` · 今${city.modernName}` : ''
@@ -241,6 +242,7 @@ export function historicalToWorld(
           name: `${city.name}城牆`,
           // 'residential' keeps walls out of the searchable entries list.
           type: 'residential',
+          style: 'chinese',
           category: 'Wall',
           description: `${city.name}的城垣(示意)。`,
           districtId: `d:${city.factionId}`,

@@ -243,34 +243,37 @@ export function createPicker(
           }
         }
       }
-      // Merged polygon buildings (imported worlds): resolve id via face ranges.
-      if (buildings.polyMesh) {
-        const hit = raycaster.intersectObject(buildings.polyMesh, false)[0];
-        const ranges = buildings.polyMesh.userData.faceRanges as
+      // Merged meshes (imported polygon buildings + chinese hip roofs): resolve
+      // the building id from the hit triangle via the mesh's face ranges.
+      const resolveMerged = (mesh: THREE.Mesh | null): void => {
+        if (!mesh) return;
+        const hit = raycaster.intersectObject(mesh, false)[0];
+        const ranges = mesh.userData.faceRanges as
           | Array<{ start: number; end: number; id: string }>
           | undefined;
         const face = hit?.faceIndex ?? null;
-        if (hit && face !== null && ranges && (!best || hit.distance < best.distance)) {
-          // Binary search the face range containing this triangle.
-          let lo = 0;
-          let hi = ranges.length - 1;
-          while (lo <= hi) {
-            const mid = (lo + hi) >> 1;
-            const r = ranges[mid]!;
-            if (face < r.start) hi = mid - 1;
-            else if (face >= r.end) lo = mid + 1;
-            else {
-              best = {
-                objectId: r.id,
-                objectType: 'building',
-                point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
-                distance: hit.distance,
-              };
-              break;
-            }
+        if (!hit || face === null || !ranges || (best && hit.distance >= best.distance)) return;
+        // Binary search the face range containing this triangle.
+        let lo = 0;
+        let hi = ranges.length - 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          const r = ranges[mid]!;
+          if (face < r.start) hi = mid - 1;
+          else if (face >= r.end) lo = mid + 1;
+          else {
+            best = {
+              objectId: r.id,
+              objectType: 'building',
+              point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
+              distance: hit.distance,
+            };
+            break;
           }
         }
-      }
+      };
+      resolveMerged(buildings.polyMesh);
+      resolveMerged(buildings.roofMesh);
     }
     if (landmarks) {
       const hits = raycaster.intersectObject(landmarks, true);

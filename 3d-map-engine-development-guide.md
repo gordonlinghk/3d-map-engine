@@ -108,7 +108,7 @@
 - **易錯點**:Pages deploy 可能暫時性失敗(“try again later”,本項目發生過 3 次);**同一 run 重跑會產生兩個同名 artifact 而再失敗——正確做法是 `gh workflow run` 觸發全新 run**。
 - **驗證**:CI 綠 + live URL 截圖。
 
-### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10 → B11 → B12 → B13 →(數據來源調研)→ A5 → B14 → B15 → C1
+### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10 → B11 → B12 → B13 →(數據來源調研)→ A5 → B14 → B15 → C1 → C2
 
 | 代號 | 內容 | 關鍵檔案 | 一句話要點 |
 |---|---|---|---|
@@ -129,6 +129,7 @@
 | A5 | 真實高程 | `packages/terrain/*`、`App.tsx`、`bake-city.ts`、`flatAreas.ts` | terrarium DEM(AWS 免 key,`h=R·256+G+B/256−32768`)→ `fetchElevationGrid`(zoom 按磁磚預算 ≤14、瀏覽器 canvas 解碼 / Node 注入 pngjs)→ `applyTerrainToWorld`:chunk 高度相對最低陸地、海(≤0.05m)→ −1.6 低於 waterLevel(**維港自動出現,v1 限制①③修復**)、水體下壓平湖床、建築沉至 footprint 最低點、道路節點重取樣(roadMesh/simulation/streetLights 自取樣自動跟隨);`world.attribution` 新 core 欄位 → SidePanel 渲染;`?flat=1`/`--flat` 退出、失敗退平地;**mock Overpass 的 e2e 必須 abort elevation route 防真網請求**。實測中環 −1.6~479.8m |
 | B14 | 三國 MVP | `packages/historical/*`、`App.tsx`、`Toolbar.tsx`、`renderer.ts`(fog) | 戰略尺度 **1 unit=1km**;資料包 = TS 常量(~50 城 attested/inferred/stylized 三級 confidence + 出處;黃河走古北道);`historicalToWorld`:真實 DEM(垂直 ×0.012 誇張、海→−2)+ 風格化城池(主殿=可搜尋 entry、category=勢力名;**城牆 type 必須 residential 否則塞爆列表**)+ 河流 ribbon 分段 carve + 路線→roadGraph;URL `?map=` + Toolbar ⚔️ select;草稿 sourceSlug=`hist:…`;**坑:fog 距離按 half=800 城市世界調的 → `fogScale=max(1, half/800)`,3000-unit 世界否則全被霧吞** |
 | C1 | 遊戲邏輯層 SDK | **新包 `packages/game/*`**(零 DOM/Three)、`three/gameView.ts`、`three/cameraRig.ts`+`renderer.ts`(鏡頭跟隨)、`demo/App.tsx`(`?game=1`)、`e2e/game.spec.ts` | **以多 agent workflow 交付**(Opus 寫 A*/模擬核心 + 鏡頭跟隨、Sonnet 寫 gameView 綁定 + demo/e2e、Haiku 全路徑 QA、獨立 clean-session Opus 終審);`@map-engine/game` = **A\* 尋路**(道路圖無向、cost=幾何 XZ 長度 → 直線啟發式 admissible/consistent → 最短路;二元堆積、tie-break 確定性)+ **單位模擬**(`tick(dt)` 沿路徑推進、貼地取樣、heading、事件 spawned/waypoint/arrived/removed;flush 具重入保護保證嚴格發射順序;全確定性)+ `buildGraphIndex`/`nearestNode`/`findPath`;`three/createGameView` = 每單位一 marker、每幀 tick sim + 同步、`followUnit`;**鏡頭跟隨**新增 `cameraRig.setFollowTarget` + `renderer.setFollowTarget`(update 分支序 tween > follow > orbit/free;**坑:follow 會關 orbit.enabled → setMode/goHome/focusOn 取消跟隨必須經 `stopFollow()` 還原,否則相機鎖死**——終審抓到並修);demo `?game=1` 全 gated(單位生在同一連通分量保證互可達,點地面 → lead 單位尋路);單元測試 23(pathfinding 10 + simulation 13) |
+| C2 | 中式建築風格 | `core/types.ts`(`BuildingStyle`)、`historical/convert.ts`、`three/buildingsMesh.ts`+`interaction.ts`、`e2e/historical.spec.ts` | **多 agent workflow 交付**(Opus 核心幾何/Sonnet 視覺驗證+e2e/Haiku QA/獨立 Opus 終審);`BuildingInfo` 加**可選** `style?: 'modern'\|'chinese'`(additive,modern 無影響);三國城池主殿+城牆標 `style:'chinese'`;渲染關鍵設計:**chinese 建築改走合併多邊形 body 路徑**(暖牆無玻璃、經 faceRanges 可 pick——picker 免改)+ 疊加合併 **歇山/廡殿式屋頂 mesh**(`makeHipRoof`:base 依 w/d、脊沿長軸、DoubleSide 免管繞向、簷口外挑;方形退化為攢尖;瓦色青灰、牆色木紅/夯土;長條城牆按長寬比 gate 不加頂);night 由 poly 暖光沿用。**終審抓到並修的真 bug:屋頂高於牆身+外挑,只 raycast body → 點屋頂會 miss 反而取消選取(halls 本是可點方塊,屬回退)→ 給屋頂 mesh 也建 faceRanges 並將 picker 的 polyMesh 區塊抽成 `resolveMerged` 同時處理 body+roof**(獨立 Opus 複審 APPROVE)。 |
 | B15 | POI 註記系統 | `core/edits.ts`(overlay v2)、`three/poisGroup.ts`+`editor.ts`、`ui/EditorPanel.tsx` | **首次以多 agent workflow 交付**(Opus 核心遷移/Sonnet 常規/Haiku QA/獨立 Opus 終審);`PoiInfo` + MapObject poi 變體 + 圖層 'pois';**EditOverlay v1→v2**(+addedPois/modifiedPois/deletedPois),`normalizeOverlay()` 讓舊 localStorage/草稿無損遷移(所有讀取入口必須經它);編輯器 📍 poiMode(與 addMode 互斥)、rename/icon/delete 全走 Command(undo/redo 自然生效)、`renderer.refreshPois()`;POI 進 entries(kind 'poi')可搜尋。**坑:zero-POI 世界不可 eager 建共享幾何(disposeObject 只釋放掛在 mesh 上的資源)** |
 
 ---
@@ -172,7 +173,7 @@ graph TD
 | 決策 | 影響 |
 |---|---|
 | `createWorldHeightSampler` 從 **chunk 高度網格雙線性取樣**而非重算地形函數 | 任何來源的世界(程序/OSM/烘焙/歷史)道路、車流、Walk、地標朝向全部自動正確。**修改地形高度必須改 chunk heights,不能只改 sampler**(A5 的 `applyTerrainToWorld` 正是這樣做) |
-| 建築渲染二分:軸對齊矩形 → InstancedMesh;任意多邊形 → 合併 ExtrudeGeometry + faceRanges picking | 新增建築形狀不用動 picking;但**編輯建築後必須呼叫 `renderer.refreshBuildings()`** |
+| 建築渲染三分:`style:'chinese'` → 合併多邊形 body + 歇山屋頂(皆 faceRanges picking);軸對齊矩形 → InstancedMesh;任意多邊形 → 合併 ExtrudeGeometry + faceRanges | 新增建築形狀/風格不用動 picking(屋頂 mesh 亦帶 faceRanges,`interaction.resolveMerged` 統一解析);但**編輯建築後必須呼叫 `renderer.refreshBuildings()`**;新風格 = 在 buildingsMesh 加分支 + 讀 `BuildingInfo.style` |
 | UI 用結構型 `MapRendererLike` / `BuildingEditorLike` / `CityCandidateLike` | 給 renderer/editor 加公開方法時,UI 若要用需同步擴充 `ui/src/types.ts` 的介面 |
 | `MapLayerId` 是封閉 union(core/types.ts) | 新圖層要同時改:union、renderer `layerGroups`、ui `TOGGLABLE_LAYERS` + store `layers` 初始值 |
 | 世界身份 = **URL 參數**(`seed/preset/cfg/env` \| `city` \| `bbox+cityName` \| `world` \| `map`),boot 依此分支 | 分享性好、狀態簡單;**新增世界類型 = boot 加一個分支 + 草稿 sourceSlug 前綴映射(`bbox:`/`url:`/`hist:`)+ SidePanel isImported 判斷**。切換世界必全頁重載 |
