@@ -139,7 +139,7 @@ test('era selector offers all snapshots and defaults to 229', async ({ page }) =
   await page.getByTestId('world-toggle').click();
   const eraSelect = page.getByTestId('era-select');
   await expect(eraSelect).toBeVisible();
-  await expect(eraSelect.locator('option')).toHaveCount(4);
+  await expect(eraSelect.locator('option')).toHaveCount(6);
   await expect(eraSelect).toHaveValue('y229');
 });
 

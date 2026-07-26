@@ -163,6 +163,241 @@ const SHI_XIE: HistoricalFaction = {
   notes: '士燮兄弟分領交趾、合浦、九真、南海,210 年後臣屬孫權。',
 };
 
+// ── y194 群雄並起 ─────────────────────────────────────────────────────────
+const ERA_Y194: HistoricalEra = {
+  id: 'y194',
+  year: 194,
+  name: '群雄並起',
+  sources: [
+    '《三國志·武帝紀》(194 年二征徐州;張邈、陳宮叛迎呂布,操與布相持於濮陽)',
+    '《三國志·呂布傳》(布領兗州牧,屯濮陽;195 年為操所破)',
+    '《三國志·陶謙傳》(194 年冬謙病卒,以徐州讓劉備)',
+    '《三國志·董卓傳》(李傕、郭汜據長安,挾獻帝;段煨等分屯關中)',
+    '《三國志·袁紹傳》《三國志·公孫瓚傳》(瓚殺劉虞盡有幽州,置青州刺史田楷)',
+    '《三國志·袁術傳》(193 年敗走,據壽春;遣孫策攻廬江陸康)',
+    '《三國志·劉焉傳》(194 年焉卒,子璋嗣)《三國志·張魯傳》',
+    '《三國志·劉繇傳》(194 年為揚州刺史,治曲阿)',
+    '《三國志·孫破虜討逆傳》(195 年孫策方渡江,故此時江東未屬孫氏)',
+    '《後漢書·郡國志》(州郡治所)',
+  ],
+  notes:
+    '漢末最分裂的一幕:獻帝在長安為李傕、郭汜所挾,關東州郡各自為政。' +
+    '本快照取興平元年(194)年中之勢——陶謙尚在(是年冬卒,徐州讓劉備)、' +
+    '劉焉尚在(是年卒,子璋嗣)、孫策尚未渡江(195),故揚州仍屬朝廷所署刺史劉繇。' +
+    '洛陽自 190 年董卓西遷焚燒後久為廢墟,河南尹(含虎牢、中牟)無強力歸屬,' +
+    '與武都氐羌同列為無主(群雄)。郡級小勢力(吳郡許貢、會稽王朗、秣陵薛禮、' +
+    '豫章周術等)併入名義所屬的州,見各勢力 notes。',
+  factions: [
+    {
+      id: 'caocao',
+      name: '曹操',
+      color: '#4f6db3',
+      boundary: [
+        { lat: 35.9, lon: 114.0 },
+        { lat: 35.9, lon: 116.8 },
+        { lat: 34.6, lon: 117.2 },
+        { lat: 33.3, lon: 116.0 },
+        { lat: 33.4, lon: 113.5 },
+        { lat: 34.6, lon: 113.6 },
+      ],
+      notes:
+        '兗州牧;是年二征徐州,張邈、陳宮迎呂布據兗州,操還軍與布相持於濮陽,' +
+        '實僅保鄄城、范、東阿三城(均不在本圖城池之列),圖上仍以兗豫示其本鎮。',
+    },
+    {
+      id: 'lubu',
+      name: '呂布',
+      color: '#a8474f',
+      boundary: [
+        { lat: 36.2, lon: 114.5 },
+        { lat: 36.2, lon: 115.7 },
+        { lat: 35.2, lon: 115.7 },
+        { lat: 35.2, lon: 114.5 },
+      ],
+      notes: '殺董卓後為李傕所逐,東奔為張邈所迎,領兗州牧屯濮陽;195 年敗走徐州依劉備。',
+    },
+    {
+      id: 'taoqian',
+      name: '陶謙',
+      color: '#7a9b52',
+      boundary: [
+        { lat: 34.9, lon: 116.9 },
+        { lat: 34.8, lon: 118.9 },
+        { lat: 33.7, lon: 119.5 },
+        { lat: 33.0, lon: 118.2 },
+        { lat: 33.3, lon: 116.8 },
+      ],
+      notes: '徐州牧,治郯;曹操以父仇兩度來伐。是年冬謙病卒,徐州讓劉備——本快照取年中之勢。',
+    },
+    {
+      id: 'lijue',
+      name: '李傕郭汜',
+      color: '#6d6191',
+      boundary: [
+        { lat: 35.6, lon: 105.9 },
+        { lat: 35.4, lon: 110.6 },
+        { lat: 34.2, lon: 111.0 },
+        { lat: 33.6, lon: 108.6 },
+        { lat: 34.0, lon: 106.2 },
+      ],
+      notes:
+        '董卓部將;192 年殺王允、據長安,挾獻帝以令關中,華陰段煨等涼州諸將名義同隸。' +
+        '195 年二人相攻,獻帝東歸,關中大亂。',
+    },
+    {
+      id: 'yuanshao',
+      name: '袁紹',
+      color: '#8f6fb0',
+      boundary: [
+        { lat: 40.5, lon: 110.8 },
+        { lat: 40.0, lon: 114.5 },
+        { lat: 38.6, lon: 117.4 },
+        { lat: 36.6, lon: 116.6 },
+        { lat: 35.9, lon: 114.3 },
+        { lat: 36.0, lon: 111.3 },
+        { lat: 37.6, lon: 110.0 },
+      ],
+      notes: '冀州牧,與公孫瓚相攻於界橋、龍湊之間;并州名義歸附,郡縣實由匈奴與豪強分據。',
+    },
+    {
+      id: 'gongsunzan',
+      name: '公孫瓚',
+      color: '#b35f45',
+      boundary: [
+        { lat: 42.2, lon: 113.5 },
+        { lat: 42.2, lon: 120.5 },
+        { lat: 39.8, lon: 120.9 },
+        { lat: 38.8, lon: 117.2 },
+        { lat: 40.0, lon: 114.0 },
+      ],
+      notes: '193 年殺幽州牧劉虞,盡有幽州;所置青州刺史田楷與袁譚相攻於齊地,疆界僅畫幽州本鎮。',
+    },
+    {
+      id: 'yuanshu',
+      name: '袁術',
+      color: '#4a8b9b',
+      boundary: [
+        { lat: 33.2, lon: 115.6 },
+        { lat: 33.3, lon: 118.1 },
+        { lat: 32.4, lon: 119.3 },
+        { lat: 30.4, lon: 118.0 },
+        { lat: 30.3, lon: 116.2 },
+        { lat: 31.6, lon: 115.3 },
+      ],
+      notes:
+        '193 年為曹操所敗,南走據淮南,治壽春;遣孫策為之攻廬江陸康,' +
+        '皖城 195 年方陷,圖上計入袁術勢力範圍。',
+    },
+    {
+      id: 'liubiao',
+      name: '劉表',
+      color: '#b8974a',
+      boundary: [
+        { lat: 33.6, lon: 111.0 },
+        { lat: 33.3, lon: 113.4 },
+        { lat: 31.0, lon: 115.6 },
+        { lat: 29.3, lon: 116.0 },
+        { lat: 25.2, lon: 113.5 },
+        { lat: 24.9, lon: 111.0 },
+        { lat: 26.5, lon: 109.5 },
+        { lat: 29.5, lon: 109.8 },
+        { lat: 31.3, lon: 109.9 },
+      ],
+      notes: '荊州牧,治襄陽;袁術北去後兼有南陽,江夏由黃祖鎮之。',
+    },
+    {
+      id: 'liuyao',
+      name: '劉繇(揚州)',
+      color: '#4f9b6a',
+      boundary: JIANG_DONG,
+      notes:
+        '朝廷所署揚州刺史,治曲阿;吳郡許貢、會稽王朗、秣陵薛禮、豫章周術等各據一郡一城,' +
+        '名義同隸揚州,圖上併入。195 年孫策渡江,盡取其地。',
+    },
+    {
+      id: 'liuyan',
+      name: '劉焉',
+      color: '#4f9b8f',
+      boundary: YI_ZHOU,
+      notes: '益州牧;是年自綿竹徙治成都,造乘輿車具,已有自立之心。194 年卒,子璋嗣位。',
+    },
+    ZHANG_LU,
+    {
+      id: 'liangzhou',
+      name: '馬騰韓遂',
+      color: '#8f6a4e',
+      boundary: LIANG_ZHOU,
+      notes: '涼州諸將;194 年馬騰與李傕相攻於長平觀,敗還涼州,與韓遂分據隴右河西。',
+    },
+    GONG_SUN,
+    SHI_XIE,
+  ],
+  kindOverrides: {
+    xuchang: 'town', // 時為潁川屬縣許,196 年迎帝後方成重鎮
+    luoyang: 'town', // 190 年董卓焚燒後為廢墟
+    chengdu: 'major', // 劉焉治所
+    jianye: 'town', // 時為秣陵小縣
+    wuchang: 'town', // 時為江夏鄂縣
+  },
+  nameOverrides: {
+    jianye: '秣陵',
+    wuchang: '鄂',
+  },
+  ownership: {
+    luoyang: 'neutral',
+    changan: 'lijue',
+    xuchang: 'caocao',
+    ye: 'yuanshao',
+    qiao: 'caocao',
+    chenliu: 'caocao',
+    puyang: 'lubu',
+    jinyang: 'yuanshao',
+    ji: 'gongsunzan',
+    xiangping: 'gongsun',
+    nanpi: 'yuanshao',
+    pingyuan: 'yuanshao',
+    linzi: 'gongsunzan',
+    pengcheng: 'taoqian',
+    xiapi: 'taoqian',
+    shouchun: 'yuanshu',
+    hefei: 'yuanshu',
+    wan: 'liubiao',
+    xiangyang: 'liubiao',
+    chencang: 'lijue',
+    tianshui: 'liangzhou',
+    guzang: 'liangzhou',
+    shangyong: 'zhanglu',
+    guandu: 'neutral',
+    hulao: 'neutral',
+    tongguan: 'lijue',
+    chengdu: 'liuyan',
+    hanzhong: 'zhanglu',
+    yongan: 'liuyan',
+    jiangzhou: 'liuyan',
+    zitong: 'liuyan',
+    fucheng: 'liuyan',
+    jiameng: 'liuyan',
+    jiange: 'liuyan',
+    wudu: 'neutral',
+    weixian: 'liuyan',
+    jianye: 'liuyao',
+    wuchang: 'liubiao',
+    wujun: 'liuyao',
+    kuaiji: 'liuyao',
+    jingkou: 'liuyao',
+    wancheng: 'yuanshu',
+    chaisang: 'liuyao',
+    yuzhang: 'liuyao',
+    jiangling: 'liubiao',
+    changsha: 'liubiao',
+    yiling: 'liubiao',
+    chibi: 'liubiao',
+    ruxu: 'yuanshu',
+    panyu: 'shixie',
+    longbian: 'shixie',
+  },
+};
+
 // ── y200 官渡之戰 ─────────────────────────────────────────────────────────
 const ERA_Y200: HistoricalEra = {
   id: 'y200',
@@ -665,6 +900,118 @@ const ERA_Y229: HistoricalEra = {
   },
 };
 
+// ── y264 蜀漢既亡 ─────────────────────────────────────────────────────────
+const ERA_Y264: HistoricalEra = {
+  id: 'y264',
+  year: 264,
+  name: '蜀漢既亡',
+  sources: [
+    '《三國志·後主傳》(263 年冬鄧艾自陰平入,劉禪出降,蜀漢亡)',
+    '《三國志·鍾會傳》(264 年正月鍾會、姜維之亂,旬日而定;魏分益州置梁州)',
+    '《三國志·霍峻傳》附羅憲(264 年吳遣步協、陸抗攻永安,憲固守六月不下)',
+    '《三國志·三嗣主傳》(264 年孫休卒、孫皓立;是年分交州置廣州,治番禺)',
+    '《晉書·武帝紀》(265 年十二月司馬炎受禪,本快照取魏尚存的 264 年)',
+  ],
+  notes:
+    '蜀漢亡後、晉代魏前的短暫二分:魏(實權在司馬昭)盡有益州,天下十三州得其十一;' +
+    '吳僅存江東、荊南與交廣,以三峽、襄陽、合肥為界。264 年吳乘蜀亂西圖永安,' +
+    '蜀舊將羅憲以魏巴東太守之名固守半年,吳師不能克,故永安(白帝城)歸魏。' +
+    '同年吳分交州置廣州;交趾、九真、日南自 263 年呂興之叛實已附魏,' +
+    '本圖從簡,仍依吳之名義郡界計入孫吳。265 年司馬炎即受禪建晉,' +
+    '故此快照特取魏尚存的 264 年。',
+  factions: [
+    {
+      id: 'wei',
+      name: '曹魏',
+      color: '#4f6db3',
+      boundary: [
+        { lat: 42.4, lon: 96.5 },
+        { lat: 42.4, lon: 123.8 },
+        { lat: 39.5, lon: 123.8 },
+        { lat: 34.5, lon: 120.5 },
+        { lat: 32.6, lon: 119.5 },
+        { lat: 32.6, lon: 115.5 },
+        { lat: 32.2, lon: 112.5 },
+        { lat: 33.3, lon: 109.5 },
+        { lat: 31.2, lon: 110.6 },
+        { lat: 28.5, lon: 110.0 },
+        { lat: 24.5, lon: 106.0 },
+        { lat: 21.5, lon: 101.5 },
+        { lat: 24.0, lon: 97.5 },
+        { lat: 29.0, lon: 98.0 },
+        { lat: 32.5, lon: 100.5 },
+        { lat: 33.5, lon: 104.5 },
+        { lat: 36.5, lon: 100.5 },
+        { lat: 40.0, lon: 96.5 },
+      ],
+      notes: '原魏境 + 新得之益州全境(置益、梁二州);朝政歸司馬昭,次年其子炎受禪建晉。',
+    },
+    {
+      id: 'wu',
+      name: '孫吳',
+      color: '#c2543f',
+      boundary: WU.boundary,
+      notes: '孫休卒、孫皓初立;疆域仍為江東、荊南與交廣,西線自巫峽退守西陵。',
+    },
+  ],
+  kindOverrides: {
+    chengdu: 'major', // 蜀亡後為魏益州刺史治所,非帝都
+  },
+  ownership: {
+    luoyang: 'wei',
+    changan: 'wei',
+    xuchang: 'wei',
+    ye: 'wei',
+    qiao: 'wei',
+    chenliu: 'wei',
+    puyang: 'wei',
+    jinyang: 'wei',
+    ji: 'wei',
+    xiangping: 'wei',
+    nanpi: 'wei',
+    pingyuan: 'wei',
+    linzi: 'wei',
+    pengcheng: 'wei',
+    xiapi: 'wei',
+    shouchun: 'wei',
+    hefei: 'wei',
+    wan: 'wei',
+    xiangyang: 'wei',
+    chencang: 'wei',
+    tianshui: 'wei',
+    guzang: 'wei',
+    shangyong: 'wei',
+    guandu: 'wei',
+    hulao: 'wei',
+    tongguan: 'wei',
+    chengdu: 'wei',
+    hanzhong: 'wei',
+    yongan: 'wei',
+    jiangzhou: 'wei',
+    zitong: 'wei',
+    fucheng: 'wei',
+    jiameng: 'wei',
+    jiange: 'wei',
+    wudu: 'wei',
+    weixian: 'wei',
+    jianye: 'wu',
+    wuchang: 'wu',
+    wujun: 'wu',
+    kuaiji: 'wu',
+    jingkou: 'wu',
+    wancheng: 'wu',
+    chaisang: 'wu',
+    yuzhang: 'wu',
+    jiangling: 'wu',
+    changsha: 'wu',
+    yiling: 'wu',
+    chibi: 'wu',
+    ruxu: 'wu',
+    panyu: 'wu',
+    longbian: 'wu',
+  },
+};
+
 /**
  * 三國鼎立(約 221–229 年定型後的格局)。
  *
@@ -688,7 +1035,7 @@ export const THREE_KINGDOMS: HistoricalMapData = {
 
   /** 年代快照:同一批城池、同一地形,不同歸屬(見各 era 的 sources)。 */
   defaultEra: 'y229',
-  eras: [ERA_Y200, ERA_Y208, ERA_Y219, ERA_Y229],
+  eras: [ERA_Y194, ERA_Y200, ERA_Y208, ERA_Y219, ERA_Y229, ERA_Y264],
 
   cities: [
     // ── 曹魏 ────────────────────────────────────────────────────────────

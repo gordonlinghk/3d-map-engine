@@ -34,8 +34,9 @@ describe('THREE_KINGDOMS era snapshots', () => {
   const cityIds = THREE_KINGDOMS.cities.map((c) => c.id);
   const KINDS = ['capital', 'major', 'town', 'pass', 'site'];
 
-  it('bundles the four curated eras and a default', () => {
-    expect(eras.map((e) => e.id)).toEqual(['y200', 'y208', 'y219', 'y229']);
+  it('bundles the curated eras in chronological order, with a default', () => {
+    expect(eras.map((e) => e.id)).toEqual(['y194', 'y200', 'y208', 'y219', 'y229', 'y264']);
+    expect(eras.map((e) => e.year)).toEqual([...eras.map((e) => e.year)].sort((a, b) => a - b));
     expect(eras.some((e) => e.id === THREE_KINGDOMS.defaultEra)).toBe(true);
   });
 
@@ -219,7 +220,7 @@ describe('historicalToWorld', () => {
   });
 
   it('other eras keep the city set and pick up their own owners', () => {
-    for (const id of ['y208', 'y219']) {
+    for (const id of ['y194', 'y208', 'y219', 'y264']) {
       const era = THREE_KINGDOMS.eras!.find((e) => e.id === id)!;
       const w = historicalToWorld(THREE_KINGDOMS, { era: id });
       expect(w.id).toBe(`hist:three-kingdoms:${id}`);
@@ -242,6 +243,30 @@ describe('historicalToWorld', () => {
     expect(category('jiangling')).toBe('孫權');
     expect(category('shangyong')).toBe('劉備');
     expect(category('xiangping')).toBe('公孫氏(遼東)');
+  });
+
+  it('the outer snapshots bracket the age: 成都 is 劉焉 in 194 and 曹魏 in 264', () => {
+    const y194 = THREE_KINGDOMS.eras!.find((e) => e.id === 'y194')!;
+    const liuyan = y194.factions.find((f) => f.id === 'liuyan')!;
+    const w194 = historicalToWorld(THREE_KINGDOMS, { era: 'y194' });
+    expect(w194.id).toBe('hist:three-kingdoms:y194');
+    const chengdu194 = w194.objects['city:three-kingdoms:chengdu'];
+    if (chengdu194?.objectType !== 'building') throw new Error('missing 成都');
+    expect(chengdu194.building.category).toBe(liuyan.name);
+    expect(chengdu194.building.districtId).toBe('d:liuyan');
+    // 194 年洛陽已焚、河南尹無主,虎牢與官渡同列群雄。
+    const hulao = w194.objects['city:three-kingdoms:hulao'];
+    expect(hulao?.objectType === 'building' && hulao.building.category).toBe('群雄');
+
+    const w264 = historicalToWorld(THREE_KINGDOMS, { era: 'y264' });
+    expect(w264.id).toBe('hist:three-kingdoms:y264');
+    const chengdu264 = w264.objects['city:three-kingdoms:chengdu'];
+    if (chengdu264?.objectType !== 'building') throw new Error('missing 成都');
+    expect(chengdu264.building.category).toBe('曹魏');
+    expect(chengdu264.building.metadata?.kind).toBe('major'); // 蜀亡,成都不再是帝都
+    // 羅憲固守永安,吳師不能克 —— 白帝城歸魏。
+    const yongan = w264.objects['city:three-kingdoms:yongan'];
+    expect(yongan?.objectType === 'building' && yongan.building.category).toBe('曹魏');
   });
 
   it('the default era and unknown era ids fall back to the base snapshot', () => {

@@ -47,7 +47,7 @@ Pick **三國時代 · 中國** in the 🌍 World panel (or `?map=three-kingdoms
 
 **Faction territory tint 🎨** — districts carry an optional `color`; `@map-engine/three` blends nearby above-water terrain toward the color of whichever faction district contains it (overlaps resolve smallest-district-first, so enclaves render in their own color), giving the map an at-a-glance strategic-coloring look. Purely additive: worlds that never set `District.color` (procedural, OSM) render exactly as before.
 
-**Era switching 📅** — the map now carries 4 hand-compiled era snapshots, picked via the Toolbar's 📅 ERA selector or `?era=y200|y208|y219|y229`: **y200** 官渡之戰 (9 factions), **y208** 赤壁前夕 (8 factions), **y219** 襄樊之戰後 (4 factions), **y229** 三國鼎立 (default, = the base map). Switching era re-owns, renames and resizes city halls to that year's recorded ownership — an original compilation from 正史, every era carrying its own sources. Selecting the default era clears `?era` from the URL; drafts saved mid-era embed the era in their `sourceSlug` and restore it on reopen.
+**Era switching 📅** — the map now carries 6 hand-compiled era snapshots, picked via the Toolbar's 📅 ERA selector or `?era=y194|y200|y208|y219|y229|y264`: **y194** 群雄並起 (14 factions), **y200** 官渡之戰 (9 factions), **y208** 赤壁前夕 (8 factions), **y219** 襄樊之戰後 (4 factions), **y229** 三國鼎立 (default, = the base map), **y264** 蜀漢既亡 (2 factions). Switching era re-owns, renames and resizes city halls to that year's recorded ownership — an original compilation from 正史, every era carrying its own sources. Selecting the default era clears `?era` from the URL; drafts saved mid-era embed the era in their `sourceSlug` and restore it on reopen.
 
 ### Prompt-to-map ✨
 
