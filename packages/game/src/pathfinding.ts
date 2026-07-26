@@ -1,15 +1,19 @@
-import type { RoadGraph, Vec2, Vec3 } from '@map-engine/core';
+import type { RoadEdge, RoadGraph, Vec2, Vec3 } from '@map-engine/core';
 
 /**
  * A* pathfinding over a MapWorld's road graph.
  *
  * The graph is treated as **undirected**: every edge is traversable in both
  * directions (matching how the ambient traffic layer already drives it). Cost
- * is the geometric XZ length of each edge, so the straight-line Euclidean
- * distance is an admissible, consistent heuristic and A* returns an optimal
- * (shortest) path. Tie-breaking is fully deterministic (by accumulated cost,
- * then node id), so a given (graph, from, to) always yields the same route —
- * important for reproducible simulations and tests.
+ * is by default the geometric XZ length of each edge, so the straight-line
+ * Euclidean distance is an admissible, consistent heuristic and A* returns an
+ * optimal (shortest) path. Tie-breaking is fully deterministic (by accumulated
+ * cost, then node id), so a given (graph, from, to) always yields the same
+ * route — important for reproducible simulations and tests.
+ *
+ * `buildGraphIndex` optionally takes an `edgeCost` hook to weight edges (road
+ * kind, terrain, faction control, …); see {@link EdgeCostFn} for the cost model
+ * and why optimality survives it.
  */
 
 export type PathResult = {
@@ -19,9 +23,37 @@ export type PathResult = {
   nodes: string[];
   /** World positions of each node in `nodes` (parallel array). */
   points: Vec3[];
-  /** Total path length in world units (XZ). `Infinity` when not found. */
+  /**
+   * Total effective cost of the route. With no `edgeCost` hook this is the path
+   * length in world units (XZ); with one it is the sum of the weighted per-edge
+   * costs. `Infinity` when not found.
+   */
   cost: number;
 };
+
+/**
+ * Per-edge cost override for {@link buildGraphIndex}.
+ *
+ * Called once per graph edge with the edge, its two endpoint positions (in
+ * `edge.from` → `edge.to` order) and `baseCost` — the edge's geometric XZ
+ * length, i.e. the cost used when no hook is supplied.
+ *
+ * The returned value is interpreted as follows:
+ * - **Effective cost = `max(returnValue, baseCost)`.** The clamp is what keeps
+ *   the Euclidean heuristic admissible: no edge can ever cost less than the
+ *   straight-line distance it spans, so `h(n)` (straight line to the goal) can
+ *   never exceed the true remaining cost, and A* stays optimal under the
+ *   weighted model. Consequence: the hook can only ever make an edge *more*
+ *   expensive — discounts are clamped away rather than silently breaking A*.
+ * - **`Infinity` marks the edge impassable**: it is dropped from the adjacency
+ *   in *both* directions, as if it were absent from the graph.
+ * - **`NaN` or a negative value falls back to `baseCost`** (defensive: a bad
+ *   weight degrades to plain geometric cost instead of poisoning the search).
+ *
+ * The hook must be pure and deterministic — it is called once per edge at index
+ * build time, and route determinism depends on it.
+ */
+export type EdgeCostFn = (edge: RoadEdge, from: Vec3, to: Vec3, baseCost: number) => number;
 
 const NO_PATH: PathResult = { found: false, nodes: [], points: [], cost: Infinity };
 
@@ -42,8 +74,18 @@ function xzDist(a: Vec3, b: Vec3): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
 
-/** Build the reusable adjacency index from a road graph. */
-export function buildGraphIndex(graph: RoadGraph): RoadGraphIndex {
+/**
+ * Build the reusable adjacency index from a road graph.
+ *
+ * With no `options.edgeCost`, edges cost their geometric XZ length. Supplying
+ * the hook re-weights (or removes) edges up front, so every later `findPath`
+ * against this index searches the weighted graph — see {@link EdgeCostFn}.
+ */
+export function buildGraphIndex(
+  graph: RoadGraph,
+  options?: { edgeCost?: EdgeCostFn },
+): RoadGraphIndex {
+  const edgeCost = options?.edgeCost;
   const nodeById = new Map<string, Vec3>();
   for (const n of graph.nodes) nodeById.set(n.id, n.position);
 
@@ -61,7 +103,15 @@ export function buildGraphIndex(graph: RoadGraph): RoadGraphIndex {
     const a = nodeById.get(e.from);
     const b = nodeById.get(e.to);
     if (!a || !b || e.from === e.to) continue;
-    const cost = xzDist(a, b);
+    const baseCost = xzDist(a, b);
+    let cost = baseCost;
+    if (edgeCost) {
+      const raw = edgeCost(e, a, b, baseCost);
+      // NaN / negative → baseCost; otherwise clamp up to keep `h` admissible.
+      cost = Number.isNaN(raw) || raw < 0 ? baseCost : Math.max(raw, baseCost);
+      // Impassable: omit the edge in both directions.
+      if (!Number.isFinite(cost)) continue;
+    }
     // Undirected: connect both ways.
     link(e.from, e.to, cost);
     link(e.to, e.from, cost);
@@ -145,9 +195,11 @@ class MinHeap {
 }
 
 /**
- * Shortest path between two road-node ids. Optimal under the geometric-length
- * cost model. Returns a not-found result when either id is unknown or the goal
- * is unreachable; a path from a node to itself is the trivial single-node path.
+ * Cheapest path between two road-node ids. Optimal under the index's cost model
+ * — geometric length, or the clamped weighted costs of a `buildGraphIndex`
+ * `edgeCost` hook. Returns a not-found result when either id is unknown or the
+ * goal is unreachable (including when weighting made every route impassable); a
+ * path from a node to itself is the trivial single-node path.
  */
 export function findPath(index: RoadGraphIndex, fromNodeId: string, toNodeId: string): PathResult {
   const { nodeById, adjacency } = index;

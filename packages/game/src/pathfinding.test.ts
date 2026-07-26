@@ -71,6 +71,111 @@ describe('findPath (hand-built graph)', () => {
   });
 });
 
+describe('buildGraphIndex — edgeCost weighting', () => {
+  const graph = squareGraph();
+
+  it('leaves routes and costs untouched when no hook is given', () => {
+    // Baseline fixture: a→c is 20 either way, b→a is 10, and the chosen route is
+    // stable. Passing no `edgeCost` must reproduce all of it exactly.
+    const plain = buildGraphIndex(graph);
+    expect(findPath(plain, 'a', 'c')).toEqual({
+      found: true,
+      nodes: ['a', 'b', 'c'],
+      points: [
+        { x: 0, y: 0, z: 0 },
+        { x: 10, y: 0, z: 0 },
+        { x: 10, y: 0, z: 10 },
+      ],
+      cost: 20,
+    });
+    // An identity hook (returns baseCost) is indistinguishable from no hook.
+    const identity = buildGraphIndex(graph, { edgeCost: (_e, _f, _t, base) => base });
+    expect(findPath(identity, 'a', 'c')).toEqual(findPath(plain, 'a', 'c'));
+  });
+
+  it('receives the edge, both endpoints and the geometric base cost', () => {
+    const seen: { id: string; from: string; to: string; base: number }[] = [];
+    buildGraphIndex(graph, {
+      edgeCost: (edge, from, to, base) => {
+        seen.push({ id: edge.id, from: `${from.x},${from.z}`, to: `${to.x},${to.z}`, base });
+        return base;
+      },
+    });
+    expect(seen).toEqual([
+      { id: 'ab', from: '0,0', to: '10,0', base: 10 },
+      { id: 'bc', from: '10,0', to: '10,10', base: 10 },
+      { id: 'cd', from: '10,10', to: '0,10', base: 10 },
+      { id: 'da', from: '0,10', to: '0,0', base: 10 },
+    ]);
+  });
+
+  it('diverts A* onto a geometrically longer route when an edge is penalised', () => {
+    // Penalise the a→b→c side heavily; the equal-length a→d→c side wins.
+    const index = buildGraphIndex(graph, {
+      edgeCost: (edge, _f, _t, base) => (edge.id === 'ab' ? base * 10 : base),
+    });
+    const p = findPath(index, 'a', 'c');
+    expect(p.found).toBe(true);
+    expect(p.nodes).toEqual(['a', 'd', 'c']);
+    expect(p.cost).toBeCloseTo(20, 6);
+
+    // A detour that is longer in geometry but cheaper in weighted cost: make the
+    // single 10-unit 'da' edge cost 200 so a→d must go the long way round.
+    const detour = buildGraphIndex(graph, {
+      edgeCost: (edge, _f, _t, base) => (edge.id === 'da' ? 200 : base),
+    });
+    const q = findPath(detour, 'a', 'd');
+    expect(q.nodes).toEqual(['a', 'b', 'c', 'd']); // 30 units of road, cost 30
+    expect(q.cost).toBeCloseTo(30, 6);
+  });
+
+  it('treats Infinity as impassable in both directions', () => {
+    const index = buildGraphIndex(graph, {
+      edgeCost: (edge, _f, _t, base) => (edge.id === 'ab' ? Infinity : base),
+    });
+    // Neither direction of 'ab' survives in the adjacency.
+    expect((index.adjacency.get('a') ?? []).map((n) => n.to)).toEqual(['d']);
+    expect((index.adjacency.get('b') ?? []).map((n) => n.to)).toEqual(['c']);
+    // Routing goes around.
+    expect(findPath(index, 'a', 'b').nodes).toEqual(['a', 'd', 'c', 'b']);
+
+    // Blocking every edge out of 'a' makes it unreachable entirely.
+    const walled = buildGraphIndex(graph, {
+      edgeCost: (edge) => (edge.id === 'ab' || edge.id === 'da' ? Infinity : 1),
+    });
+    const p = findPath(walled, 'a', 'c');
+    expect(p.found).toBe(false);
+    expect(p.cost).toBe(Infinity);
+  });
+
+  it('clamps a below-baseCost return up to baseCost (keeps the heuristic admissible)', () => {
+    const index = buildGraphIndex(graph, { edgeCost: () => 0 });
+    for (const neighbours of index.adjacency.values()) {
+      for (const n of neighbours) expect(n.cost).toBe(10);
+    }
+    // Zero/negative/NaN weights all degrade to the geometric length.
+    expect(findPath(index, 'a', 'c').cost).toBeCloseTo(20, 6);
+    expect(findPath(buildGraphIndex(graph, { edgeCost: () => -5 }), 'a', 'c').cost).toBeCloseTo(
+      20,
+      6,
+    );
+    expect(findPath(buildGraphIndex(graph, { edgeCost: () => NaN }), 'a', 'c').cost).toBeCloseTo(
+      20,
+      6,
+    );
+    expect(
+      findPath(buildGraphIndex(graph, { edgeCost: () => -Infinity }), 'a', 'c').cost,
+    ).toBeCloseTo(20, 6);
+  });
+
+  it('reports the summed weighted cost, not the geometric length', () => {
+    const index = buildGraphIndex(graph, { edgeCost: (_e, _f, _t, base) => base + 5 });
+    const p = findPath(index, 'a', 'c');
+    expect(p.nodes).toHaveLength(3); // two edges of 15
+    expect(p.cost).toBeCloseTo(30, 6);
+  });
+});
+
 describe('nearestNode', () => {
   const index = buildGraphIndex(squareGraph());
 

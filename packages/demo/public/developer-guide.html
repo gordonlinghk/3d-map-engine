@@ -121,7 +121,7 @@
   <tr><td><code>@map-engine/ui</code></td><td>React demo UI:搜尋、列表、面板、工具列、迷你地圖</td><td>core、zustand、fuse.js;peer <code>react&gt;=18</code></td></tr>
   <tr><td><code>@map-engine/demo</code></td><td>Vite app,把一切組起來(private,不發佈)</td><td>全部 + <code>@anthropic-ai/sdk</code></td></tr>
 </table>
-<p>功能全景:三種程序生成 preset、Orbit/Fly/Walk 相機(Walk 含碰撞)、點選/搜尋/資訊面板、日/黃昏/夜三種環境(真陰影、夜間發光窗、街燈、星空)、車流渡輪飛機模擬、自然語言生成地圖(Claude API + 本地解析)、真實城市匯入(OSM + 真實高程)、三國歷史地圖(<strong>中式建築風格</strong>、<strong>勢力著色</strong>、<strong>年份切換</strong>)、POI 註記、完整建築編輯器(undo/redo + 持久化),以及 <strong>C1 遊戲邏輯層</strong>(A\* 尋路 + 單位模擬 + 鏡頭跟隨,demo 內 <code>?game=1</code> 試玩)。</p>
+<p>功能全景:三種程序生成 preset、Orbit/Fly/Walk 相機(Walk 含碰撞)、點選/搜尋/資訊面板、日/黃昏/夜三種環境(真陰影、夜間發光窗、街燈、星空)、車流渡輪飛機模擬、自然語言生成地圖(Claude API + 本地解析)、真實城市匯入(OSM + 真實高程)、三國歷史地圖(<strong>中式建築風格</strong>、<strong>勢力著色</strong>、<strong>年份切換</strong>)、POI 註記、完整建築編輯器(undo/redo + 持久化),以及 <strong>C1 遊戲邏輯層</strong>(A\* 尋路 + 單位模擬 + 鏡頭跟隨)再由 <strong>C7 擴充</strong>(尋路權重 edgeCost + <strong>勢力戰鬥</strong> + <strong>單位選取</strong>,demo 內 <code>?game=1</code> 試玩兩派紅藍對戰)。</p>
 
 <div class="callout">
   <span class="t">六條不可違反的硬性規則</span>
@@ -143,7 +143,7 @@
 <h3>2.2 常用命令</h3>
 <pre><code>pnpm install            # 安裝(注意:pnpm-workspace.yaml 已允許 esbuild build script)
 pnpm dev                # demo dev server → http://localhost:5173
-pnpm test               # 47 個單元測試(Vitest)
+pnpm test               # 191 個單元測試(Vitest,17 檔)
 pnpm test:e2e           # Playwright 全部(desktop / large / mobile 三種 viewport)
 npx playwright test --project=desktop     # 只跑 desktop(日常最常用,~1.5 分鐘)
 pnpm lint && pnpm typecheck                # ESLint + tsc project references
@@ -163,7 +163,9 @@ pnpm release            # 發佈到 npm(目前刻意擱置,見 §12.2)</code></p
 ├─ osm/src/       <i># overpass · convert · cities · types</i>
 └─ demo/src/      <i># App.tsx · promptToMap.ts · main.tsx</i>
 e2e/              <i># smoke · interaction · ui · environment · visual · world · prompt ·</i>
-                  <i>#   osm · walk · editor(共 23 個測試)</i>
+                  <i>#   osm · walk · editor · terrain · historical · draft · city-search ·</i>
+                  <i>#   baked-world · panel-minimap · poi · game(共 18 個 spec 檔、141 個測試 =</i>
+                  <i>#   每個 viewport 47 個 × desktop/large/mobile 三個 project)</i>
 .github/workflows/ <i># deploy.yml(CI+Pages) · release.yml(npm,tag 觸發)</i></div>
 
 <!-- ============================================================ -->
@@ -286,7 +288,7 @@ e2e/              <i># smoke · interaction · ui · environment · visual · wo
 <table>
   <tr><th>檔案</th><th>重點</th></tr>
   <tr><td><code>cameraRig.ts</code></td><td>三模式:orbit(OrbitControls damped)、fly(左鍵 drag-look + WASD/QE/Shift,滾輪調速,禁止入地)、walk(pointer lock、貼地 eye 2.3m、碰撞、海面阻擋、head bob)。<code>focusOn()</code> 回 Promise 的 easing tween,結束後落回 orbit。<strong>切到 fly/walk 時才從 camera quaternion 同步 yaw/pitch</strong>(程式化設定朝向要「先 lookAt 再 setMode」)。<strong>鏡頭跟隨(C1)</strong>:<code>setFollowTarget(get)</code> 每幀輪詢一個點、保持起始取景平滑追蹤;update 分支序 <code>tween &gt; follow &gt; orbit/free</code>;跟隨會關 <code>orbit.enabled</code>,故 <code>setMode/goHome/focusOn</code> 取消跟隨都經 <code>stopFollow()</code> 還原輸入(否則相機鎖死——終審抓到的坑)。</td></tr>
-  <tr><td><code>gameView.ts</code></td><td><code>createGameView(renderer, sim)</code>:<code>@map-engine/game</code> 的 Three 綁定。每單位一 marker(預設朝 +Z 的錐體,heading→<code>rotation.y</code>)、訂閱 <code>unit:spawned/removed</code> 建/棄 mesh、<strong>每幀 <code>onFrame</code> 內 tick sim 再同步 transform</strong>、<code>followUnit(id|null)</code> 接鏡頭跟隨、<code>dispose()</code> 全清。純邏輯(A*/單位/事件)留在 game 包可 node 單測,渲染綁定在此。</td></tr>
+  <tr><td><code>gameView.ts</code></td><td><code>createGameView(renderer, sim, options?)</code>:<code>@map-engine/game</code> 的 Three 綁定。每單位一 marker(預設朝 +Z 的錐體,heading→<code>rotation.y</code>;顏色優先序 <code>options.factionColors?.[unit.factionId] ?? KIND_COLORS[kind] ?? 預設色</code>)、訂閱 <code>unit:spawned/removed</code> 建/棄 mesh、<strong>每幀 <code>onFrame</code> 內 tick sim 再同步 transform</strong>、<code>followUnit(id|null)</code> 接鏡頭跟隨、<code>dispose()</code> 全清。<strong>單位選取(C7)</strong>:<code>pickUnit(pointer)</code> 把客戶端像素座標轉 NDC 對單位 marker 群 raycast,取最近命中並經 <code>Object3D → UnitId</code> 反查表(沿 parent chain 走)解析出單位 id,未命中回 <code>null</code>;<code>selectUnit(id|null)</code> / <code>getSelectedUnit()</code>;選取以場景中一個命名 <code>'game:selection'</code> 的環形 mesh 呈現,每幀跟著被選單位位置更新,單位被移除時自動清除選取,<code>dispose()</code> 一併釋放其 geometry/material。純邏輯(A*/單位/事件/戰鬥)留在 game 包可 node 單測,渲染綁定與選取層都在此。</td></tr>
   <tr><td><code>interaction.ts</code></td><td><code>buildPickableIndex</code>(footprint 全點 AABB → 半徑/尺寸);<code>createPicker</code>(instanced <code>instanceId</code> 映射 + 多邊形 mesh <code>faceIndex</code> 二分查找 + 地面 raycast);<code>createHighlights</code>(hover 環+邊框、selected 脈動雙環,additive blending)。</td></tr>
   <tr><td><code>collision.ts</code></td><td>純 TS(可 node 單測):建築 footprint + 實體地標的 2D AABB 進 48 單位 cell 空間雜湊;<code>resolveMovement()</code> 逐軸解算 = 天然沿牆滑行;橋與公園不阻擋。</td></tr>
   <tr><td><code>editor.ts</code></td><td><code>createBuildingEditor(renderer, world, {initialOverlay, onOverlayChange})</code>:命令堆疊(100 步,apply/revert 成對)、拖曳移動(半透明 ghost 預覽,依賴 <code>pickGround</code> + <code>setEditorDragging</code>)、樓高/改名/旋轉±15°/刪除/點地新增、overlay 追蹤。每次 commit 後呼叫 <code>renderer.refreshBuildings()</code>。</td></tr>
@@ -307,14 +309,14 @@ setFollowTarget(get|null)           // 鏡頭跟隨移動點(gameView 用);null 
 on(event, handler): off             onFrame(cb): off           dispose()</code></pre>
 <div class="callout warn"><span class="t">改公開 API 的三步驟</span>① <code>ThreeMapRenderer</code> 介面(renderer.ts)② UI 若要用 → 同步 <code>ui/src/types.ts</code> 的 <code>MapRendererLike</code> ③ 檢查 e2e 對 <code>window.__mapEngine</code> 的使用(十多個 spec 檔大量依賴)。</div>
 
-<h3>6.4 @map-engine/game 遊戲邏輯層(C1)</h3>
-<p>純、確定性、零依賴(只依賴 core,無 DOM/Three)——把 <code>MapWorld</code> 變成可在其上<strong>建遊戲</strong>的基底。渲染綁定(<code>gameView.ts</code>)與鏡頭跟隨在 <code>@map-engine/three</code>,見 §6.1–6.2。</p>
+<h3>6.4 @map-engine/game 遊戲邏輯層(C1,C7 擴充尋路權重 + 陣營戰鬥)</h3>
+<p>純、確定性、零依賴(只依賴 core,無 DOM/Three)——把 <code>MapWorld</code> 變成可在其上<strong>建遊戲</strong>的基底。渲染綁定與單位選取(<code>gameView.ts</code>)、鏡頭跟隨在 <code>@map-engine/three</code>,見 §6.1–6.2。</p>
 <table>
   <tr><th>模組</th><th>重點</th></tr>
-  <tr><td><code>pathfinding.ts</code></td><td><strong>A\* 尋路</strong>。<code>buildGraphIndex(roadGraph)</code>(建一次、重用):道路圖視為<strong>無向</strong>、邊 cost = 幾何 XZ 長度 → 直線 Euclidean 啟發式 admissible/consistent → <code>findPath</code> 回<strong>最短路</strong>。二元最小堆積,tie-break(f→g→node id)確定性。<code>nearestNode(index,x,z)</code> 把世界座標吸附到最近道路節點;<code>findPathBetweenPoints</code> 兩端各吸附。回傳 <code>{found, nodes[], points[], cost}</code>。</td></tr>
-  <tr><td><code>simulation.ts</code></td><td><code>createGameSimulation(world, opts?)</code>:<code>spawnUnit</code>/<code>moveUnitTo(id, {x,y})</code>(Vec2:.x=世界x、.y=世界z)/<code>setUnitPath</code>/<code>stopUnit</code>/<code>removeUnit</code>/<code>getUnit</code>/<code>listUnits</code>/<code>on</code>/<code>tick(dt)</code>。<code>tick</code> 沿路徑弧長推進單位、<code>createWorldHeightSampler</code> 貼地、更新 heading、發事件 <code>unit:spawned/waypoint/arrived/removed</code>。<strong>flush 有重入保護</strong>保證嚴格發射順序(handler 內生/棄單位安全)。給定 (world, spawns, dt 序列) <strong>完全確定性</strong>。</td></tr>
+  <tr><td><code>pathfinding.ts</code></td><td><strong>A\* 尋路</strong>。<code>buildGraphIndex(roadGraph, options?)</code>(建一次、重用):道路圖視為<strong>無向</strong>、邊 cost 預設 = 幾何 XZ 長度 → 直線 Euclidean 啟發式 admissible/consistent → <code>findPath</code> 回<strong>最短路</strong>。二元最小堆積,tie-break(f→g→node id)確定性。<code>nearestNode(index,x,z)</code> 把世界座標吸附到最近道路節點;<code>findPathBetweenPoints</code> 兩端各吸附。回傳 <code>{found, nodes[], points[], cost}</code>。<strong>尋路權重(C7)</strong>:<code>options.edgeCost?: EdgeCostFn</code>,簽名 <code>(edge, from, to, baseCost) => number</code>,建索引時對每條邊呼叫一次。有效 cost = <code>Math.max(回傳值, baseCost)</code>——<strong>刻意的 clamp</strong>:邊永遠不能比它的幾何直線距離更便宜,直線啟發式才始終 admissible,A\* 才維持最優解(換句話說 hook 只能讓邊變貴,想打折會被無聲鉗制,不會偷偷弄壞 A\*)。回傳 <code>Infinity</code> = 該邊封路,雙向從 adjacency 移除,如同不存在;回傳 <code>NaN</code> 或負值回退成 <code>baseCost</code>(防禦性)。<code>PathResult.cost</code> 相應變成加權總和,權重令目標不可達時回傳照舊的 not-found 結果。</td></tr>
+  <tr><td><code>simulation.ts</code></td><td><code>createGameSimulation(world, opts?)</code>(<code>opts.edgeCost?</code> 透傳給內部的 <code>buildGraphIndex</code>):<code>spawnUnit</code>/<code>moveUnitTo(id, {x,y})</code>(Vec2:.x=世界x、.y=世界z)/<code>setUnitPath</code>/<code>stopUnit</code>/<code>removeUnit</code>/<code>getUnit</code>/<code>listUnits</code>/<code>on</code>/<code>tick(dt)</code>。<code>tick</code> 沿路徑弧長推進單位、<code>createWorldHeightSampler</code> 貼地、更新 heading、發事件 <code>unit:spawned/waypoint/arrived/removed</code>。<strong>flush 有重入保護</strong>保證嚴格發射順序(handler 內生/棄單位安全)。給定 (world, spawns, dt 序列) <strong>完全確定性</strong>。<strong>陣營戰鬥(C7)</strong>:<code>SpawnOptions</code> 加 <code>factionId?</code>/<code>hp?</code>(預設 100)/<code>attackDamage?</code>(預設每秒 10)/<code>attackRange?</code>(預設 8);<code>Unit</code> 對應加同名欄位,<code>factionId: string | null</code>(<code>null</code> = 非戰鬥單位,永不攻擊也永不被鎖定);<code>UnitState</code> 加 <code>'fighting'</code>;新事件 <code>unit:combat {attackerId, defenderId, damage}</code> 與 <code>unit:defeated {unitId, attackerId}</code>(緊接一個 <code>unit:removed</code>)。<code>tick(dt)</code> 固定拆三個 phase 讓戰鬥和移動一樣可重現:<strong>① 鎖定</strong>——用 tick 開始時的位置,每個非中立單位找範圍內最近的敵方陣營單位,同距離 id 較小者勝;<strong>② 移動</strong>——沒鎖定敵人的單位照常走,鎖定了的整 tick 暫停(路徑/progress 原樣保留,`state`→`'fighting'`,靠 `preFightState` map 記住暫停前狀態,解除鎖定後照原樣恢復);<strong>③ 傷害</strong>——先用 phase① 的鎖定結果算出每筆傷害,再一次性套用,故同 tick 互相在射程內的兩個單位可以互相殺死對方(對稱結算),<code>hp&lt;=0</code> 者本 tick 移除。一個 tick 內事件發射順序固定:移動事件(單位插入序)→ <code>unit:combat</code>(攻擊者插入序)→ 逐個陣亡單位(陣亡單位插入序)的 <code>unit:defeated</code>+<code>unit:removed</code> 配對。</td></tr>
 </table>
-<div class="callout"><span class="t">慣例與坑</span><code>Unit.position</code>、<code>getUnit/listUnits</code> 回傳的是<strong>活引用</strong>(sim 每 tick 就地改),外部只讀勿改。事件多在 <code>tick</code> 發,但 <code>spawnUnit</code>/<code>removeUnit</code>/零距離 <code>moveUnitTo</code> 會<strong>同步</strong>發(所以消費端要同時從 <code>listUnits()</code> 種子化,如 <code>createGameView</code>)。單位速度須 &gt; 0 才會移動。demo <code>?game=1</code> 把單位生在同一連通分量以保證互可達。</div>
+<div class="callout"><span class="t">慣例與坑</span><code>Unit.position</code>、<code>getUnit/listUnits</code> 回傳的是<strong>活引用</strong>(sim 每 tick 就地改),外部只讀勿改。事件多在 <code>tick</code> 發,但 <code>spawnUnit</code>/<code>removeUnit</code>/零距離 <code>moveUnitTo</code> 會<strong>同步</strong>發(所以消費端要同時從 <code>listUnits()</code> 種子化,如 <code>createGameView</code>)。單位速度須 &gt; 0 才會移動。demo <code>?game=1</code> 把單位生在同一連通分量以保證互可達。<strong>C7 新增</strong>:已鎖定敵人的單位<strong>暫停但不放棄路徑</strong>——`state` 變 `'fighting'` 期間 `path`/`progress` 原封不動,一旦敵人脫離射程就從原進度繼續走,不會重新尋路也不會回到起點;`unit:combat` 是<strong>每個交戰中的 tick 都會發一次</strong>,不是只在開戰或命中瞬間發一次,所以訂閱它的消費端(例如打傷害飄字)要自己按 `attackerId+defenderId` 去重或節流,否則會每幀狂發同一對單位的事件。只有本 tick 真的受傷的單位才會被判定陣亡——<code>unit:defeated</code> 的 <code>attackerId</code> 必填,生成時就 <code>hp&lt;=0</code> 但沒人打它的單位會活著留在場上。</div>
 
 <!-- ============================================================ -->
 <h2 id="s7"><span class="no">7</span>@map-engine/ui 深入</h2>
@@ -403,8 +405,8 @@ on(event, handler): off             onFrame(cb): off           dispose()</code><
 
 <!-- ============================================================ -->
 <h2 id="s11"><span class="no">11</span>測試與品質保障</h2>
-<h3>11.1 單元測試(Vitest,173 個 / 17 檔)</h3>
-<p>覆蓋:RNG(確定性/fork 順序無關/分布)、noise、序列化 roundtrip、世界生成(同 seed 相同、preset 陸水比、道路圖合法、物件 id 完整、chunk 登記唯一)、directives(clamp/中英解析/schema 完整)、OSM 轉換(fixture:高度解析、道路映射、樹在多邊形內、確定性)、terrain(fixture DEM 解碼/套用)、historical(資料校驗,<strong>C3 起 7→29、C4 再 29→38、C6 再 38→40:六個 era 的 ownership 覆蓋每座城、era 按年份遞增排列、勢力著色 district.color、world.id 分支,新增長方主殿 footprint 比例 + 都城 roofTiers:2 斷言</strong>)、碰撞(24 角度永不穿入掃描)、edits(overlay v2 重放、POI 增刪一致)、<strong>game(A\* 尋路最短性/無向/確定性/admissible cost、單位到達/waypoint 順序/不可達/不過衝/heading/移除安全/確定性/事件嚴格順序,共 23)</strong>、<strong>terrainMesh(C3 新增,6:territory tint lerp、enclave 面積優先、無色世界零影響)</strong>、<strong>buildingsMesh.test.ts(C5 新增檔 14 → C6 擴到 21:曲面坡面公式、翹角上限不超脊高、簷邊中點貼弦、方形 footprint 攢尖退化、faceRanges 與三角形數對應,C6 新增重檐上檐縮放/簷高偏移、收腰與斗栱帶顏色、roofTiers 缺省視為 1、單檐與重檐皆連續 faceRanges 的斷言)</strong>。</p>
+<h3>11.1 單元測試(Vitest,191 個 / 17 檔)</h3>
+<p>覆蓋:RNG(確定性/fork 順序無關/分布)、noise、序列化 roundtrip、世界生成(同 seed 相同、preset 陸水比、道路圖合法、物件 id 完整、chunk 登記唯一)、directives(clamp/中英解析/schema 完整)、OSM 轉換(fixture:高度解析、道路映射、樹在多邊形內、確定性)、terrain(fixture DEM 解碼/套用)、historical(資料校驗,<strong>C3 起 7→29、C4 再 29→38、C6 再 38→40:六個 era 的 ownership 覆蓋每座城、era 按年份遞增排列、勢力著色 district.color、world.id 分支,新增長方主殿 footprint 比例 + 都城 roofTiers:2 斷言</strong>)、碰撞(24 角度永不穿入掃描)、edits(overlay v2 重放、POI 增刪一致)、<strong>game(A\* 尋路最短性/無向/確定性/admissible cost、單位到達/waypoint 順序/不可達/不過衝/heading/移除安全/確定性/事件嚴格順序,<strong>C7 從 23 擴到 41</strong>:<code>pathfinding.test.ts</code> 10→16 新增 <code>edgeCost</code> 加權改變最短路選擇、clamp 對打折權重無效、<code>Infinity</code> 封路後改道或回報不可達、<code>NaN</code>/負值回退 <code>baseCost</code>、<code>PathResult.cost</code> 反映加權和等斷言;<code>simulation.test.ts</code> 13→25 新增陣營鎖定最近敵人+id tie-break、鎖定中的單位暫停且保留路徑/解除後從原進度續走、同 tick 互相傷害的對稱結算與同歸於盡、<code>hp&lt;=0</code> 觸發 <code>unit:defeated</code>+<code>unit:removed</code>、非中立 factionId 才會交戰、單 tick 內事件順序(移動→combat→defeated/removed)等斷言)</strong>、<strong>terrainMesh(C3 新增,6:territory tint lerp、enclave 面積優先、無色世界零影響)</strong>、<strong>buildingsMesh.test.ts(C5 新增檔 14 → C6 擴到 21:曲面坡面公式、翹角上限不超脊高、簷邊中點貼弦、方形 footprint 攢尖退化、faceRanges 與三角形數對應,C6 新增重檐上檐縮放/簷高偏移、收腰與斗栱帶顏色、roofTiers 缺省視為 1、單檐與重檐皆連續 faceRanges 的斷言)</strong>。</p>
 <h3>11.2 e2e(Playwright,18 個 spec 檔 × 3 viewport)</h3>
 <table>
   <tr><th>spec</th><th>驗證</th></tr>
@@ -415,7 +417,7 @@ on(event, handler): off             onFrame(cb): off           dispose()</code><
   <tr><td>osm / editor / poi</td><td><code>page.route()</code> mock Overpass 載入+搜尋+署名;編輯全流程含 <strong>reload 持久化</strong>、add mode;POI 放置/改名/圖示/刪除+undo</td></tr>
   <tr><td>terrain / historical / draft</td><td>真實高程套用、三國世界載入(<strong>C3:era 切換改主殿歸屬/名稱、勢力著色渲染</strong>,測試數 3→6)、草稿存開續編(含 era 內嵌於 sourceSlug)</td></tr>
   <tr><td>baked-world / city-search / panel-minimap</td><td>?world= 烘焙載入、城市搜尋 + AREA、列表過濾 + 小地圖跳轉</td></tr>
-  <tr><td><strong>game(C1)</strong></td><td><strong><code>?game=1</code> 點地面單位 A* 尋路抵達目標、鏡頭跟隨追蹤(<code>expect.poll</code> 抗慢機、三 viewport 全綠)</strong></td></tr>
+  <tr><td><strong>game(C1,C7 擴充)</strong></td><td><strong><code>?game=1</code> 點地面單位 A* 尋路抵達目標、鏡頭跟隨追蹤;<strong>C7 新增 3 個測試(1→4)</strong>:<code>selectUnit</code> 設定 <code>getSelectedUnit</code> + 顯示/清除 <code>game:selection</code> 場景物件、<code>pickUnit</code> 對準單位 marker 命中(投影單位世界座標追蹤)且空白處落空、紅藍雙方接觸後自動開戰並在 <code>unit:defeated</code> 事件後單位數減少(<code>expect.poll</code> 抗慢機、三 viewport 全綠)</strong></td></tr>
 </table>
 <p>CI 設定:<code>retries: 2</code>、timeout 120s(慢跑者對策);測試中程式化控制相機請遵守「先 lookAt 再 setCameraMode、不點 canvas」(§14 第 3 條)。</p>
 

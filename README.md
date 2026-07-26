@@ -60,9 +60,9 @@ Either way the result is a set of clamped `MapDirectives` (preset, environment, 
 
 ### Game layer 🎮
 
-The [`@map-engine/game`](packages/game) package turns a `MapWorld` into a playable substrate — the foundation for building an actual game on the engine. It is pure, deterministic, zero-dependency TypeScript (no DOM/Three.js): **A\* pathfinding** over the road graph (optimal, deterministic routes), **units** that move along those routes hugging the terrain, and an **event-driven simulation** (`unit:spawned` / `waypoint` / `arrived` / `removed`). The Three.js binding `createGameView` (in `@map-engine/three`) renders a marker per unit and offers **camera-follow** — the camera smoothly chases a unit until you take control back (switch mode, go home, or focus something).
+The [`@map-engine/game`](packages/game) package turns a `MapWorld` into a playable substrate — the foundation for building an actual game on the engine. It is pure, deterministic, zero-dependency TypeScript (no DOM/Three.js): **A\* pathfinding** over the road graph (optimal, deterministic routes; an optional `edgeCost` hook re-weights or closes off edges — clamped to keep the Euclidean heuristic admissible, so A\* stays optimal), **units** that move along those routes hugging the terrain and can belong to a **faction** and fight (deterministic three-phase combat tick — engage, move-or-hold, damage — emitting `unit:combat`/`unit:defeated`), and an **event-driven simulation** (`unit:spawned` / `waypoint` / `arrived` / `combat` / `defeated` / `removed`). The Three.js binding `createGameView` (in `@map-engine/three`) renders a marker per unit (optionally colored per faction), offers **camera-follow**, and supports **click-to-select** (`pickUnit`/`selectUnit`, a ring highlights the selection).
 
-Try it in the demo with **`?game=1`**: a few units spawn on the road network; click the ground to send the lead unit pathfinding there, and the camera can follow it. Everything is gated behind that flag, so the default demo is untouched.
+Try it in the demo with **`?game=1`**: two factions — red × 3, blue × 3 — spawn well-separated on the road network. Click a unit to select it (a ring appears), then click the ground to send that unit pathfinding there; the camera can follow a unit; red and blue units auto-fight on contact. Everything is gated behind that flag, so the default demo is untouched.
 
 ### Controls
 
@@ -88,7 +88,7 @@ Try it in the demo with **`?game=1`**: a few units spawn on the road network; cl
 | `@map-engine/core` | Data model, seeded RNG, noise, terrain/road/city generation, serialization | none (no DOM, no Three.js) |
 | `@map-engine/terrain` | Real-world elevation: terrarium DEM tiles (AWS) → chunk height grids | core |
 | `@map-engine/historical` | Hand-curated historical map packs (Three Kingdoms China) with provenance/confidence | core |
-| `@map-engine/game` | Game logic: A\* pathfinding over the road graph, deterministic unit movement, event-driven simulation | core (no DOM/Three.js) |
+| `@map-engine/game` | Game logic: A\* pathfinding over the road graph (optional weighted/impassable edges), deterministic unit movement, faction combat, event-driven simulation | core (no DOM/Three.js) |
 | `@map-engine/three` | Three.js renderer adapter: meshes, camera rig, picking, highlights, environments, tour, unit view + camera follow | three, game |
 | `@map-engine/ui` | React demo UI: search, list, info panel, toolbar, minimap, HUD | react, zustand, fuse.js |
 | `@map-engine/demo` | Vite app wiring everything together | all of the above |

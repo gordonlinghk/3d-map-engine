@@ -4,6 +4,7 @@ import {
   buildGraphIndex,
   findPath,
   nearestNode,
+  type EdgeCostFn,
   type PathResult,
   type RoadGraphIndex,
 } from './pathfinding';
@@ -18,13 +19,19 @@ import {
  * no DOM — the renderer binding (`@map-engine/three` `createGameView`) reads
  * this state each frame and syncs meshes.
  *
- * Determinism: given the same world, the same spawn calls and the same `dt`
- * sequence, unit positions and the event stream are identical every run. Units
- * are ticked and events flushed in insertion order.
+ * Units may also belong to a **faction** and fight: each `tick(dt)` resolves
+ * engagement, movement and damage in three fixed phases (see `tick` below), so
+ * combat is as reproducible as movement.
+ *
+ * Determinism: given the same world, the same spawn/command calls and the same
+ * `dt` sequence, unit positions, hp and the event stream are identical every
+ * run. Units are ticked and events flushed in insertion order; targeting ties
+ * break on unit id. Hp never regenerates.
  */
 
 export type UnitId = string;
-export type UnitState = 'idle' | 'moving' | 'arrived';
+/** `'fighting'` = engaged with an enemy this tick, so movement is suspended. */
+export type UnitState = 'idle' | 'moving' | 'arrived' | 'fighting';
 
 export type Unit = {
   readonly id: UnitId;
@@ -46,6 +53,19 @@ export type Unit = {
   progress: number;
   /** Caller-defined tag, e.g. 'soldier', 'cart'. Purely informational. */
   kind: string;
+  /**
+   * Combat allegiance. `null` = non-combatant: it never attacks and is never
+   * targeted. Units fight only units of a *different* non-null faction.
+   */
+  factionId: string | null;
+  /** Current health. Reaches `<= 0` → the unit is defeated and removed. */
+  hp: number;
+  /** Health at spawn; never changes (hp never regenerates). */
+  maxHp: number;
+  /** Damage per second dealt to the current target. `<= 0` = never attacks. */
+  attackDamage: number;
+  /** Engagement radius in world units (XZ distance). */
+  attackRange: number;
   /** Free-form caller data. Never read by the simulation. */
   data: Record<string, unknown>;
 };
@@ -60,6 +80,14 @@ export type SpawnOptions = {
   /** World units per second. Default 24. */
   speed?: number;
   kind?: string;
+  /** Combat allegiance. Omitted/undefined → `null` (non-combatant). */
+  factionId?: string;
+  /** Starting (and max) health. Default 100. */
+  hp?: number;
+  /** Damage per second. Default 10. */
+  attackDamage?: number;
+  /** Engagement radius in world units (XZ). Default 8. */
+  attackRange?: number;
   data?: Record<string, unknown>;
 };
 
@@ -67,6 +95,10 @@ export type GameEvent =
   | { type: 'unit:spawned'; unitId: UnitId }
   | { type: 'unit:waypoint'; unitId: UnitId; nodeIndex: number }
   | { type: 'unit:arrived'; unitId: UnitId }
+  /** One attacker's damage for one tick (`attackDamage * dt`). */
+  | { type: 'unit:combat'; attackerId: UnitId; defenderId: UnitId; damage: number }
+  /** Emitted immediately before the `unit:removed` of a unit killed in combat. */
+  | { type: 'unit:defeated'; unitId: UnitId; attackerId: UnitId }
   | { type: 'unit:removed'; unitId: UnitId };
 
 export interface GameSimulation {
@@ -85,7 +117,26 @@ export interface GameSimulation {
   setUnitPath(id: UnitId, path: PathResult): boolean;
   /** Stop a unit where it is (state → 'idle', clears its route). */
   stopUnit(id: UnitId): void;
-  /** Advance all moving units and flush the resulting events to subscribers. */
+  /**
+   * Advance the simulation by `dt` seconds and flush the resulting events.
+   *
+   * Three phases, in this order (all `dt > 0` only):
+   * 1. **Engagement**, evaluated on tick-start positions: every unit with a
+   *    non-null `factionId` and `attackDamage > 0` targets the nearest living
+   *    enemy (different non-null faction) within `attackRange`, ties broken by
+   *    smaller unit id.
+   * 2. **Movement**: units without a target move as usual; units with one do not
+   *    advance at all this tick (route and progress preserved, `state` →
+   *    `'fighting'`).
+   * 3. **Damage**: every engagement's `attackDamage * dt` is computed from the
+   *    phase-1 targeting and only then applied, so mutual kills are symmetric.
+   *    Units brought to `hp <= 0` are removed.
+   *
+   * Event order within one tick is fixed: movement events (waypoint/arrival) in
+   * unit insertion order, then one `unit:combat` per attacker in attacker
+   * insertion order, then — per defeated unit in insertion order —
+   * `unit:defeated` immediately followed by `unit:removed`.
+   */
   tick(dt: number): void;
   /**
    * Subscribe to the event stream. Returns an unsubscribe function. Most events
@@ -103,6 +154,11 @@ export type GameSimulationOptions = {
   heightSampler?: (x: number, z: number) => number;
   /** Constant lift above the ground, in world units. Default 0. */
   groundOffset?: number;
+  /**
+   * Per-edge cost weighting for the road graph this simulation routes on (see
+   * `buildGraphIndex` / {@link EdgeCostFn}). Applied once, at construction.
+   */
+  edgeCost?: EdgeCostFn;
 };
 
 /** Internal per-unit movement geometry (arc-length parameterised polyline). */
@@ -120,7 +176,7 @@ export function createGameSimulation(
   world: MapWorld,
   opts: GameSimulationOptions = {},
 ): GameSimulation {
-  const index = buildGraphIndex(world.roadGraph);
+  const index = buildGraphIndex(world.roadGraph, { edgeCost: opts.edgeCost });
   const sampleRaw = opts.heightSampler ?? createWorldHeightSampler(world);
   const waterLevel = world.config.waterLevel;
   const groundOffset = opts.groundOffset ?? 0;
@@ -129,6 +185,12 @@ export function createGameSimulation(
 
   const units = new Map<UnitId, Unit>();
   const movers = new Map<UnitId, Mover>();
+  /**
+   * State a unit held when it entered combat, so leaving combat restores it
+   * instead of guessing. Re-recorded on every fresh entry into `'fighting'`, so
+   * `stopUnit`/`moveUnitTo` calls made mid-fight win over the stale value.
+   */
+  const preFightState = new Map<UnitId, UnitState>();
   const handlers = new Set<(e: GameEvent) => void>();
   const pending: GameEvent[] = [];
   let autoId = 0;
@@ -227,6 +289,7 @@ export function createGameSimulation(
       x = 0;
       z = 0;
     }
+    const hp = o.hp ?? 100;
     const unit: Unit = {
       id,
       position: { x, y: groundY(x, z), z },
@@ -236,6 +299,11 @@ export function createGameSimulation(
       path: null,
       progress: 0,
       kind: o.kind ?? 'unit',
+      factionId: o.factionId ?? null,
+      hp,
+      maxHp: hp,
+      attackDamage: o.attackDamage ?? 10,
+      attackRange: o.attackRange ?? 8,
       data: o.data ?? {},
     };
     units.set(id, unit);
@@ -248,6 +316,7 @@ export function createGameSimulation(
     if (!units.has(id)) return;
     units.delete(id);
     movers.delete(id);
+    preFightState.delete(id);
     emit({ type: 'unit:removed', unitId: id });
     flush();
   };
@@ -256,6 +325,7 @@ export function createGameSimulation(
     const unit = units.get(id);
     if (!unit) return;
     movers.delete(id);
+    preFightState.delete(id);
     unit.path = null;
     unit.progress = 0;
     unit.state = 'idle';
@@ -296,9 +366,96 @@ export function createGameSimulation(
     return true;
   };
 
+  /**
+   * Phase 1 — engagement, resolved on tick-start positions so the outcome does
+   * not depend on who moved first. Returns attackerId → defenderId for every
+   * unit that found an enemy: nearest (XZ) living unit of a different non-null
+   * faction within range, ties broken by smaller unit id.
+   */
+  const selectTargets = (): Map<UnitId, UnitId> => {
+    const targets = new Map<UnitId, UnitId>();
+    for (const unit of units.values()) {
+      if (unit.factionId === null || unit.attackDamage <= 0) continue;
+      let bestId: UnitId | null = null;
+      let bestD = Infinity;
+      for (const other of units.values()) {
+        if (other === unit || other.factionId === null) continue;
+        if (other.factionId === unit.factionId) continue;
+        const dx = other.position.x - unit.position.x;
+        const dz = other.position.z - unit.position.z;
+        const d = Math.hypot(dx, dz);
+        if (d > unit.attackRange) continue;
+        if (d < bestD || (d === bestD && bestId !== null && other.id < bestId)) {
+          bestD = d;
+          bestId = other.id;
+        }
+      }
+      if (bestId !== null) targets.set(unit.id, bestId);
+    }
+    return targets;
+  };
+
+  /**
+   * Phase 3 — damage. Every hit is computed from phase-1 targeting *before* any
+   * hp is written, so two units in range can kill each other on the same tick.
+   * Only units damaged this tick can be defeated (an attacker is required for
+   * `unit:defeated`; a unit spawned at `hp <= 0` that nobody attacks survives).
+   */
+  const resolveCombat = (targets: Map<UnitId, UnitId>, dt: number): void => {
+    if (targets.size === 0) return;
+    // Attacker insertion order.
+    const hits: { attackerId: UnitId; defenderId: UnitId; damage: number }[] = [];
+    for (const unit of units.values()) {
+      const defenderId = targets.get(unit.id);
+      if (defenderId === undefined) continue;
+      hits.push({ attackerId: unit.id, defenderId, damage: unit.attackDamage * dt });
+    }
+    const damaged = new Set<UnitId>();
+    for (const hit of hits) {
+      const defender = units.get(hit.defenderId);
+      if (!defender) continue;
+      defender.hp -= hit.damage;
+      damaged.add(hit.defenderId);
+    }
+    for (const hit of hits) emit({ type: 'unit:combat', ...hit });
+    // Defeated in defeated-unit insertion order; attacker = earliest hit on it.
+    const defeated: { unitId: UnitId; attackerId: UnitId }[] = [];
+    for (const unit of units.values()) {
+      if (!damaged.has(unit.id) || unit.hp > 0) continue;
+      const killer = hits.find((h) => h.defenderId === unit.id)!;
+      defeated.push({ unitId: unit.id, attackerId: killer.attackerId });
+    }
+    for (const { unitId, attackerId } of defeated) {
+      units.delete(unitId);
+      movers.delete(unitId);
+      preFightState.delete(unitId);
+      emit({ type: 'unit:defeated', unitId, attackerId });
+      emit({ type: 'unit:removed', unitId });
+    }
+  };
+
   const tick = (dt: number): void => {
     if (dt > 0) {
+      const targets = selectTargets();
       for (const unit of units.values()) {
+        // Phase 2 — engaged units hold position (route + progress preserved).
+        if (targets.has(unit.id)) {
+          if (unit.state !== 'fighting') {
+            preFightState.set(unit.id, unit.state);
+            unit.state = 'fighting';
+          }
+          continue;
+        }
+        if (unit.state === 'fighting') {
+          // Disengaged: resume travel, or fall back to the pre-fight resting
+          // state ('arrived' is preserved rather than re-fired).
+          unit.state = movers.has(unit.id)
+            ? 'moving'
+            : preFightState.get(unit.id) === 'arrived'
+              ? 'arrived'
+              : 'idle';
+          preFightState.delete(unit.id);
+        }
         if (unit.state !== 'moving') continue;
         const mover = movers.get(unit.id);
         if (!mover) {
@@ -336,6 +493,7 @@ export function createGameSimulation(
           emit({ type: 'unit:arrived', unitId: unit.id });
         }
       }
+      resolveCombat(targets, dt);
     }
     flush();
   };

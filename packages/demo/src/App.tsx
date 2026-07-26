@@ -381,22 +381,35 @@ export function App() {
               const db = pb && startPos ? (pb.x - startPos.x) ** 2 + (pb.z - startPos.z) ** 2 : 0;
               return da - db;
             });
-          // Pick up to 4 well-separated nodes: the start node plus the
-          // nearest, middle, and farthest of the rest — spread across the
-          // component so routes between units are visibly long.
-          const picks = [
-            startNode,
-            remainder[0],
-            remainder[Math.floor(remainder.length / 2)],
-            remainder[remainder.length - 1],
-          ].filter((id): id is string => !!id);
-          const chosenNodeIds = [...new Set(picks)];
+          // Pick up to 6 well-separated nodes: the start node plus up to 5
+          // more spread evenly across the nearest→farthest ordering of the
+          // rest of the component, so routes between units are visibly long.
+          const extraSlots = Math.min(5, remainder.length);
+          const picks: (string | undefined)[] = [startNode];
+          for (let i = 0; i < extraSlots; i++) {
+            const idx =
+              extraSlots === 1 ? 0 : Math.round((i * (remainder.length - 1)) / (extraSlots - 1));
+            picks.push(remainder[idx]);
+          }
+          const chosenNodeIds = [...new Set(picks)].filter((id): id is string => !!id);
 
           if (chosenNodeIds.length >= 2) {
-            const units = chosenNodeIds.map((nodeId, i) =>
-              sim.spawnUnit({ atNode: nodeId, kind: i === 0 ? 'soldier' : 'cart', speed: 30 }),
+            // FROZEN invariant: the first two spawned units (insertion order)
+            // must share a faction — e2e commands unit 0 onto unit 1 and
+            // expects it to arrive rather than start fighting. Assigning the
+            // first 3 picks to 'red' and the rest to 'blue' preserves this
+            // even when the graph yields fewer than 6 nodes.
+            chosenNodeIds.forEach((nodeId, i) =>
+              sim.spawnUnit({
+                atNode: nodeId,
+                kind: 'soldier',
+                speed: 30,
+                factionId: i < 3 ? 'red' : 'blue',
+              }),
             );
-            const view = createGameView(renderer, sim);
+            const view = createGameView(renderer, sim, {
+              factionColors: { red: '#c0392b', blue: '#2d7dd2' },
+            });
             gameViewRef.current = view;
 
             const me = (window as unknown as Record<string, unknown>).__mapEngine as Record<
@@ -406,10 +419,17 @@ export function App() {
             me.game = sim;
             me.gameView = view;
 
-            const firstUnitId = units[0]!.id;
             const onGameClick = (e: MouseEvent): void => {
-              const point = renderer.pickGround({ x: e.clientX, y: e.clientY });
-              if (point) sim.moveUnitTo(firstUnitId, { x: point.x, y: point.z });
+              const pointer = { x: e.clientX, y: e.clientY };
+              const hitUnit = view.pickUnit(pointer);
+              if (hitUnit) {
+                view.selectUnit(hitUnit);
+                return;
+              }
+              const selected = view.getSelectedUnit();
+              if (!selected) return;
+              const point = renderer.pickGround(pointer);
+              if (point) sim.moveUnitTo(selected, { x: point.x, y: point.z });
             };
             renderer.domElement.addEventListener('click', onGameClick);
             gameClickCleanup = () => renderer.domElement.removeEventListener('click', onGameClick);

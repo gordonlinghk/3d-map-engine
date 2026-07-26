@@ -3,6 +3,7 @@ export {
   findPath,
   findPathBetweenPoints,
   nearestNode,
+  type EdgeCostFn,
   type PathResult,
   type RoadGraphIndex,
 } from './pathfinding';

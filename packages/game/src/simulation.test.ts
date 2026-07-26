@@ -162,11 +162,13 @@ describe('createGameSimulation — removal & safety', () => {
     const order: string[] = [];
     // Handler 1 re-enters the sim: removing B while delivering A's arrival
     // enqueues a nested event. Every event must still reach h1 before h2.
+    const label = (e: GameEvent): string =>
+      e.type === 'unit:combat' ? `${e.type}:${e.attackerId}` : `${e.type}:${e.unitId}`;
     sim.on((e) => {
-      order.push(`h1:${e.type}:${e.unitId}`);
+      order.push(`h1:${label(e)}`);
       if (e.type === 'unit:arrived' && e.unitId === 'A') sim.removeUnit('B');
     });
-    sim.on((e) => order.push(`h2:${e.type}:${e.unitId}`));
+    sim.on((e) => order.push(`h2:${label(e)}`));
     sim.spawnUnit({ id: 'A', atNode: 'a', speed: 1000 });
     sim.spawnUnit({ id: 'B', atNode: 'c' });
     sim.moveUnitTo('A', { x: 10, y: 0 }); // node b, arrives next tick
@@ -187,6 +189,200 @@ describe('createGameSimulation — removal & safety', () => {
   });
 });
 
+describe('createGameSimulation — factions & combat', () => {
+  it('defaults every unit to a non-combatant with full hp', () => {
+    const sim = makeSim();
+    const u = sim.spawnUnit({ atNode: 'a' });
+    expect(u.factionId).toBeNull();
+    expect(u.hp).toBe(100);
+    expect(u.maxHp).toBe(100);
+    expect(u.attackDamage).toBe(10);
+    expect(u.attackRange).toBe(8);
+  });
+
+  it('two enemies in range damage each other by attackDamage * dt', () => {
+    const sim = makeSim();
+    const events: GameEvent[] = [];
+    sim.on((e) => events.push(e));
+    const a = sim.spawnUnit({ id: 'A', position: { x: 0, y: 0 }, factionId: 'red' });
+    const b = sim.spawnUnit({ id: 'B', position: { x: 3, y: 0 }, factionId: 'blue' });
+    sim.tick(0.5);
+    expect(a.hp).toBeCloseTo(95, 6);
+    expect(b.hp).toBeCloseTo(95, 6);
+    expect(a.state).toBe('fighting');
+    expect(b.state).toBe('fighting');
+    expect(events.filter((e) => e.type === 'unit:combat')).toEqual([
+      { type: 'unit:combat', attackerId: 'A', defenderId: 'B', damage: 5 },
+      { type: 'unit:combat', attackerId: 'B', defenderId: 'A', damage: 5 },
+    ]);
+  });
+
+  it('ignores enemies beyond attackRange and only fights across factions', () => {
+    const sim = makeSim();
+    const events: GameEvent[] = [];
+    sim.on((e) => events.push(e));
+    sim.spawnUnit({ id: 'far1', position: { x: 0, y: 0 }, factionId: 'red', attackRange: 4 });
+    sim.spawnUnit({ id: 'far2', position: { x: 5, y: 0 }, factionId: 'blue', attackRange: 4 });
+    sim.tick(1);
+    expect(events.some((e) => e.type === 'unit:combat')).toBe(false);
+    expect(sim.getUnit('far1')!.hp).toBe(100);
+  });
+
+  it('never fights null-faction or same-faction neighbours', () => {
+    const sim = makeSim();
+    const events: GameEvent[] = [];
+    sim.on((e) => events.push(e));
+    // Non-combatant next to a soldier: neither attacks nor is targeted.
+    const civ = sim.spawnUnit({ id: 'civ', position: { x: 0, y: 0 } });
+    const soldier = sim.spawnUnit({ id: 'sol', position: { x: 1, y: 0 }, factionId: 'red' });
+    // Two units of the same faction.
+    const ally = sim.spawnUnit({ id: 'ally', position: { x: 2, y: 0 }, factionId: 'red' });
+    sim.tick(1);
+    expect(events.some((e) => e.type === 'unit:combat')).toBe(false);
+    expect([civ.hp, soldier.hp, ally.hp]).toEqual([100, 100, 100]);
+    expect([civ.state, soldier.state, ally.state]).toEqual(['idle', 'idle', 'idle']);
+  });
+
+  it('targets the nearest enemy, breaking ties on the smaller unit id', () => {
+    const sim = makeSim();
+    const events: GameEvent[] = [];
+    sim.on((e) => events.push(e));
+    sim.spawnUnit({ id: 'hero', position: { x: 0, y: 0 }, factionId: 'red', attackDamage: 1 });
+    sim.spawnUnit({ id: 'far', position: { x: 5, y: 0 }, factionId: 'blue', attackDamage: 0 });
+    sim.spawnUnit({ id: 'near-z', position: { x: 2, y: 0 }, factionId: 'blue', attackDamage: 0 });
+    sim.spawnUnit({ id: 'near-a', position: { x: 0, y: 2 }, factionId: 'blue', attackDamage: 0 });
+    sim.tick(1);
+    const hits = events.filter(
+      (e): e is Extract<GameEvent, { type: 'unit:combat' }> => e.type === 'unit:combat',
+    );
+    // Both 'near-*' sit at distance 2; the smaller id wins.
+    expect(hits).toEqual([
+      { type: 'unit:combat', attackerId: 'hero', defenderId: 'near-a', damage: 1 },
+    ]);
+  });
+
+  it('emits unit:defeated then unit:removed, and forgets the unit', () => {
+    const sim = makeSim();
+    const events: GameEvent[] = [];
+    sim.on((e) => events.push(e));
+    sim.spawnUnit({ id: 'A', position: { x: 0, y: 0 }, factionId: 'red', attackDamage: 100 });
+    sim.spawnUnit({
+      id: 'B',
+      position: { x: 1, y: 0 },
+      factionId: 'blue',
+      hp: 10,
+      attackDamage: 0,
+    });
+    sim.tick(1);
+    expect(events.filter((e) => e.type !== 'unit:spawned')).toEqual([
+      { type: 'unit:combat', attackerId: 'A', defenderId: 'B', damage: 100 },
+      { type: 'unit:defeated', unitId: 'B', attackerId: 'A' },
+      { type: 'unit:removed', unitId: 'B' },
+    ]);
+    expect(sim.getUnit('B')).toBeUndefined();
+    expect(sim.listUnits().map((u) => u.id)).toEqual(['A']);
+    expect(() => sim.tick(1)).not.toThrow();
+  });
+
+  it('removes both units on a simultaneous mutual kill', () => {
+    const sim = makeSim();
+    const events: GameEvent[] = [];
+    sim.on((e) => events.push(e));
+    const at = (x: number) => ({ x, y: 0 });
+    sim.spawnUnit({ id: 'A', position: at(0), factionId: 'red', hp: 10, attackDamage: 50 });
+    sim.spawnUnit({ id: 'B', position: at(1), factionId: 'blue', hp: 10, attackDamage: 50 });
+    sim.tick(1);
+    // Damage is computed for both before either is applied → both die.
+    expect(events.filter((e) => e.type !== 'unit:spawned')).toEqual([
+      { type: 'unit:combat', attackerId: 'A', defenderId: 'B', damage: 50 },
+      { type: 'unit:combat', attackerId: 'B', defenderId: 'A', damage: 50 },
+      { type: 'unit:defeated', unitId: 'A', attackerId: 'B' },
+      { type: 'unit:removed', unitId: 'A' },
+      { type: 'unit:defeated', unitId: 'B', attackerId: 'A' },
+      { type: 'unit:removed', unitId: 'B' },
+    ]);
+    expect(sim.listUnits()).toEqual([]);
+  });
+
+  it('suspends movement while engaged and resumes when the enemy dies', () => {
+    const sim = makeSim();
+    const u = sim.spawnUnit({
+      id: 'A',
+      atNode: 'a',
+      speed: 10,
+      factionId: 'red',
+      attackDamage: 100,
+    });
+    sim.spawnUnit({
+      id: 'B',
+      position: { x: 2, y: 0 },
+      factionId: 'blue',
+      hp: 5,
+      attackDamage: 0,
+    });
+    sim.moveUnitTo('A', { x: 10, y: 10 });
+    expect(u.state).toBe('moving');
+
+    sim.tick(0.1); // engaged: holds position, kills B
+    expect(u.state).toBe('fighting');
+    expect(u.progress).toBe(0);
+    expect(u.position.x).toBe(0);
+    expect(u.path).not.toBeNull();
+    expect(sim.getUnit('B')).toBeUndefined();
+
+    sim.tick(0.1); // disengaged: resumes the preserved route
+    expect(u.state).toBe('moving');
+    expect(u.progress).toBeCloseTo(1, 6);
+  });
+
+  it('restores the pre-fight resting state (arrived is not re-fired)', () => {
+    const sim = makeSim();
+    const u = sim.spawnUnit({ id: 'A', atNode: 'a', speed: 1000, factionId: 'red' });
+    sim.moveUnitTo('A', { x: 10, y: 0 }); // node b
+    sim.tick(1);
+    expect(u.state).toBe('arrived');
+
+    const events: GameEvent[] = [];
+    sim.on((e) => events.push(e));
+    // An enemy walks into range of the resting unit, then is removed.
+    sim.spawnUnit({ id: 'B', position: { x: 12, y: 0 }, factionId: 'blue', attackDamage: 0 });
+    sim.tick(0.1);
+    expect(u.state).toBe('fighting');
+    sim.removeUnit('B');
+    sim.tick(0.1);
+    expect(u.state).toBe('arrived');
+    expect(events.some((e) => e.type === 'unit:arrived')).toBe(false);
+  });
+
+  it('hp never regenerates, and dt = 0 resolves no combat', () => {
+    const sim = makeSim();
+    const a = sim.spawnUnit({ id: 'A', position: { x: 0, y: 0 }, factionId: 'red' });
+    sim.spawnUnit({ id: 'B', position: { x: 1, y: 0 }, factionId: 'blue' });
+    sim.tick(0.5);
+    expect(a.hp).toBeCloseTo(95, 6);
+    const wounded = a.hp;
+    sim.tick(0); // zero-dt tick resolves nothing
+    expect(a.hp).toBe(wounded);
+    sim.removeUnit('B');
+    sim.tick(1);
+    expect(a.hp).toBe(wounded); // no healing once the fight is over
+    expect(a.maxHp).toBe(100);
+    expect(a.state).toBe('idle');
+  });
+});
+
+describe('createGameSimulation — edgeCost option', () => {
+  it('routes around an edge the hook marks impassable', () => {
+    const sim = createGameSimulation(fakeWorld(), {
+      heightSampler: () => 5,
+      edgeCost: (edge, _from, _to, base) => (edge.id === 'ab' ? Infinity : base),
+    });
+    const u = sim.spawnUnit({ atNode: 'a' });
+    expect(sim.moveUnitTo(u.id, { x: 10, y: 0 })).toBe(true); // node b
+    expect(u.path!.nodes).toEqual(['a', 'd', 'c', 'b']);
+  });
+});
+
 describe('createGameSimulation — determinism', () => {
   it('produces identical positions and event streams across runs', () => {
     const run = () => {
@@ -202,5 +398,34 @@ describe('createGameSimulation — determinism', () => {
     const b = run();
     expect(a.events).toEqual(b.events);
     expect(a.pos).toEqual(b.pos);
+  });
+
+  it('produces identical event logs and hp for identical combat runs', () => {
+    const run = () => {
+      const sim = makeSim();
+      const events: GameEvent[] = [];
+      sim.on((e) => events.push(e));
+      // Two columns converging on the square, plus a bystander and a courier.
+      sim.spawnUnit({ id: 'red:1', atNode: 'a', speed: 13, factionId: 'red', hp: 40 });
+      sim.spawnUnit({ id: 'blue:1', atNode: 'b', speed: 11, factionId: 'blue', hp: 40 });
+      sim.spawnUnit({ id: 'blue:2', atNode: 'c', speed: 17, factionId: 'blue', hp: 25 });
+      sim.spawnUnit({ id: 'civ:1', atNode: 'd', speed: 7 });
+      sim.moveUnitTo('red:1', { x: 10, y: 0 });
+      sim.moveUnitTo('blue:1', { x: 0, y: 0 });
+      sim.moveUnitTo('blue:2', { x: 0, y: 10 });
+      sim.moveUnitTo('civ:1', { x: 10, y: 10 });
+      for (let i = 0; i < 60; i++) sim.tick(0.1);
+      const state = sim
+        .listUnits()
+        .map((u) => `${u.id}:${u.state}:${u.hp.toFixed(4)}:${u.position.x.toFixed(4)}`);
+      return { events, state };
+    };
+    const a = run();
+    const b = run();
+    // Sanity: the fixture actually fights and kills someone.
+    expect(a.events.some((e) => e.type === 'unit:combat')).toBe(true);
+    expect(a.events.some((e) => e.type === 'unit:defeated')).toBe(true);
+    expect(a.events).toEqual(b.events);
+    expect(a.state).toEqual(b.state);
   });
 });
