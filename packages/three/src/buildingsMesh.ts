@@ -182,48 +182,115 @@ function buildPolygonBuildings(buildings: BuildingInfo[]): {
   return { mesh, material };
 }
 
+/** Exponent of the 凹曲 sweep: >1 leaves the ridge steeply, lands flat at the eave. */
+const ROOF_SLOPE_POWER = 1.6;
+/** Fraction of each eave edge that feels the 翹角 upturn, measured from a corner. */
+const ROOF_CORNER_ZONE = 0.3;
+/** Ridge→eave parameter below which the upturn is fully faded out. */
+const ROOF_UPTURN_START = 0.6;
+/** Grid rows from ridge to eave on every slope patch (kept low-poly on purpose). */
+const ROOF_SLOPE_SEGMENTS = 6;
+
+/** Hermite fade, clamped outside [edge0, edge1]. */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
 /**
- * A hipped roof (廡殿/歇山-ish) sized to a w×d base, base plane at y=0 centred
+ * A hipped roof (廡殿/攢尖-ish) sized to a w×d base, base plane at y=0 centred
  * on the origin, rising to a ridge. Eaves overhang the walls; the ridge runs
  * along the longer base axis (a pyramid when square). DoubleSide material is
  * used downstream so triangle winding is irrelevant.
+ *
+ * The four slopes are curved surfaces, not planes: each is tessellated on a
+ * (t, u) grid — t sweeps ridge (0) → eave (1), u runs along the patch — and two
+ * shape functions give the 飛簷 silhouette.
+ *
+ *  - 凹曲 (concave sweep): y = rH·(1−t)^1.6, the 舉折 profile. At mid-slope that
+ *    is ≈0.33·rH, visibly below the 0.5·rH straight ridge→eave chord.
+ *  - 翹角 (upturned corners): eave corners lift by `cornerLift`, faded by the
+ *    product of the two per-eave-edge corner factors (so edge midpoints stay
+ *    flat at y=0) and by a ridge fade that is zero for t ≤ 0.6.
+ *
+ * Only Y is displaced, so the eave rectangle stays exactly
+ * (w/2+overhang) × (d/2+overhang) and the peak stays exactly rH — the corner
+ * lift is at most 0.3·rH, so the ridge remains the highest point.
  */
-function makeHipRoof(w: number, d: number): THREE.BufferGeometry {
+export function makeHipRoof(w: number, d: number): THREE.BufferGeometry {
   const overhang = Math.max(0.4, Math.min(w, d) * 0.28);
   const rH = Math.max(1.2, Math.min(w, d) * 0.6);
   const hw = w / 2 + overhang;
   const hd = d / 2 + overhang;
+  const cornerLift = Math.max(0.25, Math.min(w, d) * 0.18);
+
+  // Build in a local frame whose `a` axis is the ridge axis and `b` axis runs
+  // across it, then map back to world XZ. Halves the case analysis: the same
+  // four patches serve w≥d, d>w and the square (pyramid) degenerate.
+  const flipped = hd > hw;
+  const aHalf = flipped ? hd : hw; // half-extent along the ridge
+  const bHalf = flipped ? hw : hd; // half-extent across the ridge
+  const ridgeHalf = aHalf - bHalf; // half ridge length; 0 ⇒ pyramid
 
   const pos: number[] = [];
   type P = [number, number, number];
-  const tri = (a: P, b: P, c: P): void => {
-    pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
-  };
-  const quad = (a: P, b: P, c: P, e: P): void => {
-    tri(a, b, c);
-    tri(a, c, e);
-  };
-  const c0: P = [-hw, 0, -hd];
-  const c1: P = [hw, 0, -hd];
-  const c2: P = [hw, 0, hd];
-  const c3: P = [-hw, 0, hd];
 
-  if (w >= d) {
-    const rx = Math.max(0, hw - hd);
-    const r0: P = [-rx, rH, 0];
-    const r1: P = [rx, rH, 0];
-    quad(c3, c2, r1, r0); // +Z long slope
-    quad(c1, c0, r0, r1); // -Z long slope
-    tri(c2, c1, r1); // +X hip end
-    tri(c0, c3, r0); // -X hip end
-  } else {
-    const rz = Math.max(0, hd - hw);
-    const r0: P = [0, rH, -rz];
-    const r1: P = [0, rH, rz];
-    quad(c1, c2, r1, r0); // +X long slope
-    quad(c3, c0, r0, r1); // -X long slope
-    tri(c2, c3, r1); // +Z hip end
-    tri(c0, c1, r0); // -Z hip end
+  /** Local (a, b) at slope parameter t → world vertex, with both shape functions. */
+  const vert = (a: number, b: number, t: number): P => {
+    const nearA = smoothstep(0, 1, 1 - (aHalf - Math.abs(a)) / (ROOF_CORNER_ZONE * 2 * aHalf));
+    const nearB = smoothstep(0, 1, 1 - (bHalf - Math.abs(b)) / (ROOF_CORNER_ZONE * 2 * bHalf));
+    const upturn = cornerLift * nearA * nearB * smoothstep(ROOF_UPTURN_START, 1, t);
+    const y = rH * Math.pow(1 - t, ROOF_SLOPE_POWER) + upturn;
+    return flipped ? [b, y, a] : [a, y, b];
+  };
+
+  const same = (p: P, q: P): boolean =>
+    (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2 < 1e-12;
+  const tri = (p: P, q: P, r: P): void => {
+    // The row at a pyramid apex / hip-end tip collapses to a point; drop the
+    // zero-area triangles it would otherwise contribute.
+    if (same(p, q) || same(q, r) || same(r, p)) return;
+    pos.push(p[0], p[1], p[2], q[0], q[1], q[2], r[0], r[1], r[2]);
+  };
+
+  /** Tessellate one slope patch; `at(t, u)` returns its local (a, b). */
+  const patch = (uSegments: number, at: (t: number, u: number) => [number, number]): void => {
+    const rows: P[][] = [];
+    for (let i = 0; i <= ROOF_SLOPE_SEGMENTS; i++) {
+      const t = i / ROOF_SLOPE_SEGMENTS;
+      const row: P[] = [];
+      for (let j = 0; j <= uSegments; j++) {
+        const [a, b] = at(t, j / uSegments);
+        row.push(vert(a, b, t));
+      }
+      rows.push(row);
+    }
+    for (let i = 0; i < ROOF_SLOPE_SEGMENTS; i++) {
+      const near = rows[i]!;
+      const far = rows[i + 1]!;
+      for (let j = 0; j < uSegments; j++) {
+        tri(near[j]!, far[j]!, far[j + 1]!);
+        tri(near[j]!, far[j + 1]!, near[j + 1]!);
+      }
+    }
+  };
+
+  // Segments across a patch, proportional to its eave edge so quads stay square.
+  const uSegs = (halfEdge: number): number =>
+    Math.max(4, Math.min(12, Math.round((ROOF_SLOPE_SEGMENTS * halfEdge) / bHalf)));
+  const longSegs = uSegs(aHalf);
+  const endSegs = uSegs(bHalf);
+  const lerp = (x: number, y: number, t: number): number => x + (y - x) * t;
+
+  for (const s of [1, -1]) {
+    // Long slope: the ridge segment fans out to the full-length eave edge.
+    patch(longSegs, (t, u) => [
+      lerp(lerp(-ridgeHalf, ridgeHalf, u), lerp(-aHalf, aHalf, u), t),
+      s * bHalf * t,
+    ]);
+    // Hip end: the ridge tip opens out to the short eave edge. Shares its two
+    // hip edges vertex-for-vertex with the long slopes, so the shell is closed.
+    patch(endSegs, (t, u) => [s * lerp(ridgeHalf, aHalf, t), lerp(-bHalf, bHalf, u) * t]);
   }
 
   const geo = new THREE.BufferGeometry();

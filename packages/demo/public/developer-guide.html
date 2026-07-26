@@ -275,7 +275,7 @@ e2e/              <i># smoke · interaction · ui · environment · visual · wo
   <tr><td>terrain</td><td><code>buildTerrainGroup</code>(+<code>buildFlatAreas</code>)</td><td>每 chunk 一個高度網格 mesh,頂點色 = 街區 kind(<code>BLOCK_COLORS</code>)或高度帶;OSM 的水/綠多邊形平面也掛在此;<strong>勢力染色(C3)</strong>——海平面以上頂點若落在有 <code>color</code> 的 district 內,顏色朝該色 <code>lerp</code> 0.45(§10.6)</td></tr>
   <tr><td>water</td><td><code>buildWaterMesh</code></td><td>大海平面 + 程序 ripple normal map(<code>userData.tick</code> 漂移 offset)</td></tr>
   <tr><td>roads</td><td><code>buildRoadsMesh</code></td><td>全部道路合併為單一 quad-strip geometry,沿 sampler 高度 +0.35;橋面恆定 waterLevel+7,紅色</td></tr>
-  <tr><td>buildings</td><td><code>buildBuildingsGroup</code></td><td>多路徑:軸對齊矩形 → 4 個高度等級 InstancedMesh(窗戶 CanvasTexture);任意多邊形 → 單一合併 ExtrudeGeometry + <code>userData.faceRanges</code>;<code>style:'chinese'</code> → 多邊形 body + 合併歇山屋頂(亦帶 faceRanges)(§10.3)。另含屋頂退台/天線 instanced。<code>setNightMode()</code> 切換夜間 emissive 貼圖</td></tr>
+  <tr><td>buildings</td><td><code>buildBuildingsGroup</code></td><td>多路徑:軸對齊矩形 → 4 個高度等級 InstancedMesh(窗戶 CanvasTexture);任意多邊形 → 單一合併 ExtrudeGeometry + <code>userData.faceRanges</code>;<code>style:'chinese'</code> → 多邊形 body + 合併曲面飛簷屋頂(翹角,亦帶 faceRanges)(§10.3)。另含屋頂退台/天線 instanced。<code>setNightMode()</code> 切換夜間 emissive 貼圖</td></tr>
   <tr><td>trees</td><td><code>buildTreesGroup</code></td><td>樹幹+樹冠兩個 InstancedMesh</td></tr>
   <tr><td>landmarks</td><td><code>buildLandmarksGroup</code></td><td>手工低模(吊橋=塔+三段 QuadraticBezier 纜索、電視塔、球場、碼頭、監獄島);<code>userData.setNight/tick</code> 控制夜光與警示燈閃爍</td></tr>
   <tr><td>traffic</td><td><code>createSimulationLayer</code></td><td>車(instanced,沿 road graph polyline,路口隨機續行)、渡輪(pier↔island 折返+浮沉)、飛機;<code>update(dt)</code> 由 renderer loop 驅動</td></tr>
@@ -386,7 +386,7 @@ on(event, handler): off             onFrame(cb): off           dispose()</code><
 </div>
 </div>
 <p>分流判斷 <code>isAxisAlignedRect(footprint)</code> 在 <code>buildingsMesh.ts</code>。編輯器旋轉建築後 footprint 不再軸對齊,自動改走右邊路徑——這是兩個功能共用一條管線的例子。</p>
-<div class="callout"><span class="t">第三條路徑:中式建築(C2)</span><code>BuildingInfo.style === 'chinese'</code>(可選欄位,預設 modern)的建築<strong>改走多邊形 body 路徑</strong>(暖牆、無玻璃窗、經 faceRanges 可 pick),並疊加一個合併的**歇山/廡殿式屋頂 mesh**(<code>makeHipRoof</code>:base 依 footprint w/d、脊沿長軸、方形退化為攢尖、簷口外挑;瓦色青灰、牆色木紅/夯土;長條城牆按長寬比 gate 不加頂)。三國城池主殿+城牆用此風格。<strong>屋頂 mesh 亦帶 <code>faceRanges</code></strong>(id=主殿 id),picker 的 <code>resolveMerged()</code> 同時解析 body 與 roof——否則點屋頂(高於且外挑於牆身)會 miss 而取消選取(終審抓到的回退)。任何世界皆可用此欄位。</div>
+<div class="callout"><span class="t">第三條路徑:中式建築(C2/C5)</span><code>BuildingInfo.style === 'chinese'</code>(可選欄位,預設 modern)的建築<strong>改走多邊形 body 路徑</strong>(暖牆、無玻璃窗、經 faceRanges 可 pick),並疊加一個合併的屋頂 mesh(<code>makeHipRoof</code>:base 依 footprint w/d、脊沿長軸、方形退化為攢尖、簷口外挑;瓦色青灰、牆色木紅/夯土;長條城牆按長寬比 gate 不加頂)。三國城池主殿+城牆用此風格。<strong>C5 把屋頂由 4 片平面歇山改成曲面飛簷</strong>:坡面依 <code>y = rH·(1−t)^1.6</code> 呈舉折式凹曲(坡中點低於弦約 34%),四角再疊加 <code>cornerLift = max(0.25, min(w,d)·0.18)</code> 的翹角(沿簷邊 smoothstep 淡出 + 向脊淡出,保證簷邊中點貼原弦、角尖不高過脊);簽名/簷口外挑範圍/脊高公式不變,方形 footprint 仍退化為攢尖(現為曲面攢尖+翹角)。<strong>屋頂 mesh 亦帶 <code>faceRanges</code></strong>(id=主殿 id,由實際三角形數推導),picker 的 <code>resolveMerged()</code> 同時解析 body 與 roof——否則點屋頂(高於且外挑於牆身)會 miss 而取消選取(終審抓到的回退)。任何世界皆可用此欄位。</div>
 
 <h3>10.4 編輯器:命令 + overlay 雙層</h3>
 <p><strong>命令層</strong>(session 內):每個操作是 <code>{apply, revert}</code>,進 100 步歷史;commit / undo / redo 後一律 <code>refreshBuildings()</code>(重建 buildings group + pickables + colliders,並重掛選取高亮)。<strong>overlay 層</strong>(跨 session):editor 追蹤 modified/added/deleted id 集,任何變化即時導出 <code>EditOverlay</code> 交給 demo 存 localStorage;下次載入同一世界時先重放。匯出 JSON = <code>serializeMap(world)</code> 全量下載,可作遊戲存檔格式。</p>
@@ -403,8 +403,8 @@ on(event, handler): off             onFrame(cb): off           dispose()</code><
 
 <!-- ============================================================ -->
 <h2 id="s11"><span class="no">11</span>測試與品質保障</h2>
-<h3>11.1 單元測試(Vitest,150 個 / 16 檔)</h3>
-<p>覆蓋:RNG(確定性/fork 順序無關/分布)、noise、序列化 roundtrip、世界生成(同 seed 相同、preset 陸水比、道路圖合法、物件 id 完整、chunk 登記唯一)、directives(clamp/中英解析/schema 完整)、OSM 轉換(fixture:高度解析、道路映射、樹在多邊形內、確定性)、terrain(fixture DEM 解碼/套用)、historical(資料校驗,<strong>C3 起 7→29、C4 再 29→38:六個 era 的 ownership 覆蓋每座城、era 按年份遞增排列、勢力著色 district.color、world.id 分支</strong>)、碰撞(24 角度永不穿入掃描)、edits(overlay v2 重放、POI 增刪一致)、<strong>game(A\* 尋路最短性/無向/確定性/admissible cost、單位到達/waypoint 順序/不可達/不過衝/heading/移除安全/確定性/事件嚴格順序,共 23)</strong>、<strong>terrainMesh(C3 新增,6:territory tint lerp、enclave 面積優先、無色世界零影響)</strong>。</p>
+<h3>11.1 單元測試(Vitest,164 個 / 17 檔)</h3>
+<p>覆蓋:RNG(確定性/fork 順序無關/分布)、noise、序列化 roundtrip、世界生成(同 seed 相同、preset 陸水比、道路圖合法、物件 id 完整、chunk 登記唯一)、directives(clamp/中英解析/schema 完整)、OSM 轉換(fixture:高度解析、道路映射、樹在多邊形內、確定性)、terrain(fixture DEM 解碼/套用)、historical(資料校驗,<strong>C3 起 7→29、C4 再 29→38:六個 era 的 ownership 覆蓋每座城、era 按年份遞增排列、勢力著色 district.color、world.id 分支</strong>)、碰撞(24 角度永不穿入掃描)、edits(overlay v2 重放、POI 增刪一致)、<strong>game(A\* 尋路最短性/無向/確定性/admissible cost、單位到達/waypoint 順序/不可達/不過衝/heading/移除安全/確定性/事件嚴格順序,共 23)</strong>、<strong>terrainMesh(C3 新增,6:territory tint lerp、enclave 面積優先、無色世界零影響)</strong>、<strong>buildingsMesh.test.ts(C5 新增檔,14:曲面坡面公式、翹角上限不超脊高、簷邊中點貼弦、方形 footprint 攢尖退化、faceRanges 與三角形數對應)</strong>。</p>
 <h3>11.2 e2e(Playwright,18 個 spec 檔 × 3 viewport)</h3>
 <table>
   <tr><th>spec</th><th>驗證</th></tr>
