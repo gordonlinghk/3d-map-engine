@@ -112,6 +112,21 @@ describe('historicalToWorld', () => {
     for (const b of [...halls, ...walls]) {
       expect(b.objectType === 'building' && b.building.style).toBe('chinese');
     }
+    // Halls are rectangular (面闊 0.22 × 進深 0.15 of the compound size), so the
+    // hip roof grows an east-west ridge instead of collapsing to a pyramid.
+    for (const hall of halls) {
+      if (hall.objectType !== 'building') throw new Error('hall not a building');
+      const xs = hall.building.footprint.map((p) => p.x);
+      const zs = hall.building.footprint.map((p) => p.y);
+      const w = Math.max(...xs) - Math.min(...xs);
+      const d = Math.max(...zs) - Math.min(...zs);
+      expect(w, hall.id).toBeGreaterThan(d);
+      expect(w / d, hall.id).toBeCloseTo(0.22 / 0.15, 5); // ≈1.467
+      expect(w / d, hall.id).toBeLessThan(2.5); // stays inside the renderer's roof gate
+      // Centred on the hall position, which is unchanged.
+      expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(hall.building.position.x, 9);
+      expect((Math.min(...zs) + Math.max(...zs)) / 2).toBeCloseTo(hall.building.position.z, 9);
+    }
     expect(world.roadGraph.edges.length).toBeGreaterThan(30);
     expect(world.waterPolygons!.length).toBeGreaterThan(30); // river ribbons
     expect(world.id).toBe('hist:three-kingdoms');
@@ -160,10 +175,60 @@ describe('historicalToWorld', () => {
     expect(z('ji')).toBeLessThan(z('panyu'));
   });
 
+  it('gives imperial capitals a double eave (重檐) and nobody else', () => {
+    const roofTiers = (id: string): 1 | 2 | undefined => {
+      const obj = world.objects[`city:three-kingdoms:${id}`];
+      if (obj?.objectType !== 'building') throw new Error(`missing ${id}`);
+      return obj.building.roofTiers;
+    };
+    for (const id of ['luoyang', 'chengdu', 'jianye']) {
+      expect(roofTiers(id), id).toBe(2);
+    }
+    expect(roofTiers('hefei')).toBeUndefined(); // 重鎮, single eave
+    // Exactly the capitals — and non-capitals omit the field rather than sending 1.
+    for (const city of THREE_KINGDOMS.cities) {
+      expect(roofTiers(city.id), city.id).toBe(city.kind === 'capital' ? 2 : undefined);
+    }
+    // Walls never carry the field.
+    const walls = Object.values(world.objects).filter((o) => o.id.startsWith('wall:'));
+    for (const wall of walls) {
+      expect(wall.objectType === 'building' && wall.building.roofTiers).toBeUndefined();
+    }
+  });
+
+  it('the double eave follows the resolved kind when eras override it', () => {
+    const w = historicalToWorld(THREE_KINGDOMS, { era: 'y200' });
+    const roofTiers = (id: string): 1 | 2 | undefined => {
+      const obj = w.objects[`city:three-kingdoms:${id}`];
+      if (obj?.objectType !== 'building') throw new Error(`missing ${id}`);
+      return obj.building.roofTiers;
+    };
+    // 196–220 獻帝都許 —— 許昌 gains the double eave …
+    expect(roofTiers('xuchang')).toBe(2);
+    // … while 洛陽 (a burnt-out town in 200) loses it.
+    expect(roofTiers('luoyang')).toBeUndefined();
+    expect(roofTiers('chengdu')).toBeUndefined(); // 劉璋治所,非帝都
+    const y200 = THREE_KINGDOMS.eras!.find((e) => e.id === 'y200')!;
+    for (const city of THREE_KINGDOMS.cities) {
+      const kind = y200.kindOverrides?.[city.id] ?? city.kind;
+      expect(roofTiers(city.id), `y200/${city.id}`).toBe(kind === 'capital' ? 2 : undefined);
+    }
+  });
+
   it('round-trips through serialization (bake/draft compatibility)', () => {
     const restored = deserializeMap(JSON.parse(JSON.stringify(serializeMap(world))));
     expect(Object.keys(restored.objects).length).toBe(Object.keys(world.objects).length);
     expect(restored.attribution).toEqual(world.attribution);
+    // roofTiers and the rectangular hall footprint survive the JSON round-trip.
+    const luoyang = restored.objects['city:three-kingdoms:luoyang'];
+    if (luoyang?.objectType !== 'building') throw new Error('missing 洛陽');
+    expect(luoyang.building.roofTiers).toBe(2);
+    const xs = luoyang.building.footprint.map((p) => p.x);
+    const zs = luoyang.building.footprint.map((p) => p.y);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(Math.max(...zs) - Math.min(...zs));
+    const hefei = restored.objects['city:three-kingdoms:hefei'];
+    if (hefei?.objectType !== 'building') throw new Error('missing 合肥');
+    expect(hefei.building.roofTiers).toBeUndefined();
   });
 
   it('tints faction districts with the faction colour (whole-map district stays untinted)', () => {

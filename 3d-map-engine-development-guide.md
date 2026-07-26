@@ -108,7 +108,7 @@
 - **易錯點**:Pages deploy 可能暫時性失敗(“try again later”,本項目發生過 3 次);**同一 run 重跑會產生兩個同名 artifact 而再失敗——正確做法是 `gh workflow run` 觸發全新 run**。
 - **驗證**:CI 綠 + live URL 截圖。
 
-### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10 → B11 → B12 → B13 →(數據來源調研)→ A5 → B14 → B15 → C1 → C2 → C3 → C4 → C5
+### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10 → B11 → B12 → B13 →(數據來源調研)→ A5 → B14 → B15 → C1 → C2 → C3 → C4 → C5 → C6
 
 | 代號 | 內容 | 關鍵檔案 | 一句話要點 |
 |---|---|---|---|
@@ -133,7 +133,8 @@
 | B15 | POI 註記系統 | `core/edits.ts`(overlay v2)、`three/poisGroup.ts`+`editor.ts`、`ui/EditorPanel.tsx` | **首次以多 agent workflow 交付**(Opus 核心遷移/Sonnet 常規/Haiku QA/獨立 Opus 終審);`PoiInfo` + MapObject poi 變體 + 圖層 'pois';**EditOverlay v1→v2**(+addedPois/modifiedPois/deletedPois),`normalizeOverlay()` 讓舊 localStorage/草稿無損遷移(所有讀取入口必須經它);編輯器 📍 poiMode(與 addMode 互斥)、rename/icon/delete 全走 Command(undo/redo 自然生效)、`renderer.refreshPois()`;POI 進 entries(kind 'poi')可搜尋。**坑:zero-POI 世界不可 eager 建共享幾何(disposeObject 只釋放掛在 mesh 上的資源)** |
 | C3 | 勢力著色 + 年份切換 | `core/types.ts`(`District.color`)、`three/terrainMesh.ts`、`historical/types.ts`(`HistoricalEra`)、`historical/convert.ts`、`historical/data/threeKingdoms.ts`(4 era)、`ui/Toolbar.tsx`(era select)、`demo/App.tsx`(`?era=`)、`e2e/historical.spec.ts` | `District` 加**可選** `color?: string`(additive,不設色的世界零影響);`terrainMesh.ts` 對海平面以上頂點,依所在有色 district 把顏色 `lerp` 0.45 朝其 `color`——重疊多邊形**按面積小到大排序**測試,保證飛地(小勢力嵌在大勢力邊界內)贏得染色;`historicalToWorld(data,{era})` 新增 `era` 選項:不傳/傳 `defaultEra`/傳未知 id 一律回退基準快照(`world.id='hist:three-kingdoms'`),傳合法 era id 則依該 era 的 `ownership`(cityId→factionId,`'neutral'` 合法)、`kindOverrides`、`nameOverrides` 重新賦權/改名/變更主殿風格,`world.id='hist:three-kingdoms:<eraId>'`;三國資料包新增 **4 個 era**:y200 官渡之戰(9 勢力)、y208 赤壁前夕(8 勢力)、y219 襄樊之戰後(4 勢力)、y229 三國鼎立(= 基準資料,預設);每個 era 的 ownership 為原始整理自正史,皆帶 `sources`。Demo:`?era=` URL 參數;Toolbar 📅 ERA `<select>`(`data-testid="era-select"`)只在歷史地圖且定義了 eras 時出現,選預設 era 會清空 `?era`;草稿 `sourceSlug` 內嵌 era(`hist:three-kingdoms:y200`),開檔還原對應 era。單元測試新增 `three/terrainMesh.test.ts`(6)+ historical 測試 7→29,基線變 141/16 檔;e2e 檔案數不變(仍 18 個 spec 檔)但 `historical.spec.ts` 測試數 3→6(era 切換 + 勢力著色)。 |
 | C4 | 更多年代快照 | `historical/data/threeKingdoms.ts`(+2 era)、`historical/historical.test.ts`、`e2e/historical.spec.ts` | 三國資料包再新增 **2 個 era**,兩端各補一筆:**y194 群雄並起**(14 勢力——漢末最分裂的一幕,取興平元年年中之勢:陶謙、劉焉尚在世,孫策未渡江故揚州仍屬劉繇;洛陽自董卓西遷焚燒後為廢墟,與官渡、虎牢、武都同列無主)、**y264 蜀漢既亡**(2 勢力——蜀漢亡後、晉代魏前的二分之勢:曹魏盡吞益州,孫吳僅存江東荊南交廣;永安羅憲以魏巴東太守之名固守六月拒吳,吳師不能克,故白帝城歸魏,notes 中披露交趾當年名義仍歸吳、實已附魏的簡化取捨)。`THREE_KINGDOMS.eras` 現為 `[y194, y200, y208, y219, y229, y264]`,依年份嚴格遞增排列,`defaultEra` 仍為 `y229`。單元測試新增校驗「eras 按年份遞增」+ 194/264 兩端各一組 ownership 斷言,historical 測試 29→38,基線變 150/16 檔;e2e 檔案數不變(仍 18 個 spec 檔),`historical.spec.ts` 的 era-count 斷言 4→6。 |
-| C5 | 中式建築 v2 — 翹角飛簷 | `three/buildingsMesh.ts`(`makeHipRoof`)、`three/buildingsMesh.test.ts`(新檔,14) | `makeHipRoof` 從 4 片平面拆成**曲面殼**:凹曲坡面 `y = rH·(1−t)^1.6`(舉折式,坡中點低於弦約 34%)疊加**四角翹起** `cornerLift = max(0.25, min(w,d)·0.18)`(smoothstep 沿簷邊 30% 範圍 + 向脊 t≤0.6 淡出,兩因子相乘保證簷邊中點貼原弦、角尖永不高過脊);簽名、簷口外挑範圍、脊高公式皆不變,方形 footprint 仍退化為攢尖(僅曲面化 + 翹角,現時三國 51 座主殿全方形,即全數出街為曲面攢尖+翹角);單棟 ~264 tris(較 v1 增加),51 頂約 13.5k tris;`faceRanges` 照舊由實際三角形數推導,picker 的 `resolveMerged` 免改,e2e `historical.spec.ts` 的 roofMapsToHall 續綠。新增 `buildingsMesh.test.ts`(14 tests:曲面單調性、翹角上限、方形退化、faceRanges 對應等)。單元測試基線 150/16 檔 → **164/17 檔**;e2e 不變(仍 18 個 spec 檔)。 |
+| C5 | 中式建築 v2 — 翹角飛簷 | `three/buildingsMesh.ts`(`makeHipRoof`)、`three/buildingsMesh.test.ts`(新檔,14) | `makeHipRoof` 從 4 片平面拆成**曲面殼**:凹曲坡面 `y = rH·(1−t)^1.6`(舉折式,坡中點低於弦約 34%)疊加**四角翹起** `cornerLift = max(0.25, min(w,d)·0.18)`(smoothstep 沿簷邊 30% 範圍 + 向脊 t≤0.6 淡出,兩因子相乘保證簷邊中點貼原弦、角尖永不高過脊);簽名、簷口外挑範圍、脊高公式皆不變,方形 footprint 仍退化為攢尖(僅曲面化 + 翹角,C5 出街時三國 51 座主殿全方形,即全數出街為曲面攢尖+翹角;C6 起改長方出歇山脊);單棟 ~264 tris(較 v1 增加),51 頂約 13.5k tris;`faceRanges` 照舊由實際三角形數推導,picker 的 `resolveMerged` 免改,e2e `historical.spec.ts` 的 roofMapsToHall 續綠。新增 `buildingsMesh.test.ts`(14 tests:曲面單調性、翹角上限、方形退化、faceRanges 對應等)。單元測試基線 150/16 檔 → **164/17 檔**;e2e 不變(仍 18 個 spec 檔)。 |
+| C6 | 中式建築 v3 — 重檐 + 斗栱帶 + 長方主殿歇山脊 | `core/types.ts`(`BuildingInfo.roofTiers`)、`historical/convert.ts`、`three/buildingsMesh.ts` + 測試 | `BuildingInfo` 加**可選** `roofTiers?: 1 \| 2`(additive,省略=1,2=重檐);歷史主殿 footprint 由正方改**長方**(面闊 `hallHalfW = style.size·0.22`,進深 `hallHalfD = style.size·0.15`,比例 ≈1.47,踩在 `isRoofEligible` 的 2.5 門檻之下)——C5 的曲面殼首次以非退化長方形出街,終於呈現真正的**歇山脊**而非攢尖;都城(era-resolved `kind==='capital'`,含 y200 官渡快照下的許昌)額外賦 `roofTiers: 2`。`buildingsMesh.ts` 對 `roofTiers===2` 的殿疊**重檐**:上檐 `makeHipRoof` 縮放 `UPPER_ROOF_SCALE=0.66`,簷面高度 = 下簷基 + 下簷脊高·`UPPER_EAVE_FRACTION=0.62`,兩檐之間補一段暖牆色收腰 `COLLAR_TINT='#8f4a3c'`(外擴 `COLLAR_MARGIN=0.08`);所有中式屋頂(單檐、重檐皆一體適用)另加**斗栱帶**:簷下木色環帶 `BAND_WOOD='#6b4a2f'`,高 `clamp(0.12, 0.3, ridge·0.1)`,外挑 = `overhang·0.4`。新增 `roofMetrics()` 從已生成的殿頂 geometry 讀回 `overhang`/`ridge`,而非重述 `makeHipRoof`(凍結未動)的內部公式,避免兩處代入公式互相漂移;每殿的下檐、斗栱帶、(重檐時)收腰、上檐、上斗栱帶依序 push 進同一 `geometries` 陣列,保持每殿三角形連續一段,`faceRanges`/picking 邏輯不變。單元測試 `buildingsMesh.test.ts` 14→21、`historical.test.ts` 38→40,單元測試基線 164/17 檔 → **173/17 檔**;e2e 不變(仍 18 個 spec 檔)。 |
 
 ---
 
@@ -365,7 +366,7 @@ pnpm dev
 
 - **加城池/河流/路線**:直接改 `historical/src/data/threeKingdoms.ts`(TS 常量,有型別);**每筆必帶 `confidence` + `sources`**;單元測試自動校驗(勢力引用、bbox 範圍、路線城市存在)。座標可用 Wikidata(CC0)查、以 TGAZ API 逐點核對(**不可**成套匯入 CHGIS——授權禁再散布)。
 - **加新歷史地圖**(如楚漢、戰國):新建 `data/xxx.ts` 遵循 `HistoricalMapData` schema → 加入 `HISTORICAL_MAPS` registry → URL `?map=xxx` 與 Toolbar 選單自動生效。
-- **三國 v2 候選**(記錄在案):~~中式建築風格~~(C2 已做)、~~勢力範圍地形著色~~(C3 已做,見 §2 C3 列)、~~年份切換~~(C3 已做:y200/y208/y219/y229 四個 era,見 §2 C3 列;C4 再補 y194/y264 兩端,現共六個 era,見 §2 C4 列;非逐年,新增年份 = 新增一筆完整 era 資料)、更多城池/戰役標記(仍待做)。
+- **三國 v2 候選**(記錄在案):~~中式建築風格~~(C2 已做)、~~勢力範圍地形著色~~(C3 已做,見 §2 C3 列)、~~年份切換~~(C3 已做:y200/y208/y219/y229 四個 era,見 §2 C3 列;C4 再補 y194/y264 兩端,現共六個 era,見 §2 C4 列;非逐年,新增年份 = 新增一筆完整 era 資料)、~~翹角飛簷~~(C5 已做,見 §2 C5 列)、~~斗栱帶 + 重檐~~(C6 已做:斗栱帶套用全部中式屋頂、重檐套用都城主殿、長方主殿露出真正歇山脊,見 §2 C6 列;剩長方以外的收邊 polish——簷下退層填充——仍待做)、更多城池/戰役標記(仍待做)。
 
 ---
 
@@ -385,7 +386,7 @@ pnpm dev
 
 ### 7.2 動手前檢查
 
-- [ ] `pnpm install && pnpm typecheck && pnpm lint && pnpm test` 全綠(基線 **164 unit / 17 檔**;C1 增 game 包的 pathfinding + simulation 共 23,C3 增 `three/terrainMesh.test.ts`(6)並把 historical 測試從 6 擴到 29,C4 再把 historical 擴到 38,C5 新增 `three/buildingsMesh.test.ts`(14))
+- [ ] `pnpm install && pnpm typecheck && pnpm lint && pnpm test` 全綠(基線 **173 unit / 17 檔**;C1 增 game 包的 pathfinding + simulation 共 23,C3 增 `three/terrainMesh.test.ts`(6)並把 historical 測試從 6 擴到 29,C4 再把 historical 擴到 38,C5 新增 `three/buildingsMesh.test.ts`(14),C6 把 buildingsMesh 測試擴到 21、historical 擴到 40)
 - [ ] `npx playwright install chromium`(首次)後 `npx playwright test --workers=2` 全綠(**18 個 spec 檔**,3 viewport;本機別開太多 workers,見 §5.5)
 - [ ] 確認要改的部分在 §3.4 速查表中會牽動誰
 - [ ] 若改生成邏輯:想清楚舊 `EditOverlay`(localStorage)、`.mapdraft.json` 草稿與舊分享 URL(cfg/seed/bbox/map)是否仍能載入

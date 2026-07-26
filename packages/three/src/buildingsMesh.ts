@@ -299,6 +299,94 @@ export function makeHipRoof(w: number, d: number): THREE.BufferGeometry {
   return geo;
 }
 
+// --- C6 中式建築 v3: 斗栱帶 + 重檐 -------------------------------------------
+//
+// Both are strategy-scale suggestions, not carpentry: at map zoom a hall is a
+// few dozen pixels tall, so a bracket set reads as a shadow line and a second
+// eave reads as a silhouette. Each is a handful of triangles.
+
+/** 斗栱帶 height as a fraction of the roof's ridge height, clamped to [min, max]. */
+const BAND_RIDGE_RATIO = 0.1;
+const BAND_MIN_HEIGHT = 0.12;
+const BAND_MAX_HEIGHT = 0.3;
+/** How far the band juts past the wall line, as a fraction of the eave overhang. */
+const BAND_OUTSET_RATIO = 0.4;
+/** Oiled-timber tone for the bracket band — deliberately not a roof tint. */
+const BAND_WOOD = '#6b4a2f';
+
+/** 重檐: the upper roof's plan, as a fraction of the lower roof's. */
+const UPPER_ROOF_SCALE = 0.66;
+/** 重檐: the upper eave plane, as a fraction of the lower roof's ridge height. */
+const UPPER_EAVE_FRACTION = 0.62;
+/** 重檐: absolute world-unit pad added to the collar's total width/depth (not a ratio) — 0.04 per side. */
+const COLLAR_MARGIN = 0.08;
+/** 重檐: the short body between the two eaves wears the hall's own wall tone. */
+const COLLAR_TINT = '#8f4a3c';
+
+/**
+ * The eave overhang and ridge height `makeHipRoof` picked for a w×d roof, read
+ * back off the geometry instead of restating its (frozen) sizing formulas, so
+ * the band and the upper tier can never drift out of step with the shell.
+ * Must be called before the roof is translated into place.
+ */
+function roofMetrics(geo: THREE.BufferGeometry, w: number): { overhang: number; ridge: number } {
+  geo.computeBoundingBox();
+  const box = geo.boundingBox!;
+  return { overhang: box.max.x - w / 2, ridge: box.max.y };
+}
+
+/**
+ * An axis-aligned box as a bare non-indexed position+normal soup, so it merges
+ * with the hip-roof shells (which carry exactly those two attributes).
+ */
+function boxSoup(
+  w: number,
+  h: number,
+  d: number,
+  cx: number,
+  cy: number,
+  cz: number,
+): THREE.BufferGeometry {
+  const boxed = new THREE.BoxGeometry(w, h, d);
+  const geo = boxed.toNonIndexed();
+  boxed.dispose();
+  geo.deleteAttribute('uv');
+  geo.clearGroups();
+  geo.translate(cx, cy, cz);
+  return geo;
+}
+
+/**
+ * 斗栱帶 — the corbel band that carries the eave. A shallow ring hugging the
+ * top of the body, jutting a little past the wall line to catch a shadow, its
+ * top flush with the roof's base plane.
+ */
+function makeBracketBand(
+  w: number,
+  d: number,
+  overhang: number,
+  ridge: number,
+  cx: number,
+  baseY: number,
+  cz: number,
+): THREE.BufferGeometry {
+  const h = Math.min(BAND_MAX_HEIGHT, Math.max(BAND_MIN_HEIGHT, ridge * BAND_RIDGE_RATIO));
+  const out = overhang * BAND_OUTSET_RATIO;
+  return boxSoup(w + 2 * out, h, d + 2 * out, cx, baseY - h / 2, cz);
+}
+
+function paint(geo: THREE.BufferGeometry, hex: string, color: THREE.Color): void {
+  color.set(hex);
+  const count = geo.attributes.position!.count;
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    colors[i * 3] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+}
+
 /** One merged mesh of hip roofs for the roof-eligible chinese buildings. */
 function buildChineseRoofs(buildings: BuildingInfo[]): THREE.Mesh | null {
   const eligible = buildings.filter(isRoofEligible);
@@ -319,27 +407,62 @@ function buildChineseRoofs(buildings: BuildingInfo[]): THREE.Mesh | null {
       minY = Math.min(minY, p.y);
       maxY = Math.max(maxY, p.y);
     }
-    const geo = makeHipRoof(maxX - minX, maxY - minY);
+    const w = maxX - minX;
+    const d = maxY - minY;
+    const cx = b.position.x;
+    const cz = b.position.z;
     // Overlap the wall top by a hair so roof and wall meet without a gap
     // (body spans up to position.y + height - 0.3).
-    geo.translate(b.position.x, b.position.y + b.height - 0.35, b.position.z);
+    const baseY = b.position.y + b.height - 0.35;
+    const tint = ROOF_TINTS[(b.floors + idx) % ROOF_TINTS.length]!;
 
-    color.set(ROOF_TINTS[(b.floors + idx) % ROOF_TINTS.length]!);
-    const count = geo.attributes.position!.count;
-    const colors = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      colors[i * 3] = color.r;
-      colors[i * 3 + 1] = color.g;
-      colors[i * 3 + 2] = color.b;
+    // Everything this hall contributes goes in back to back, so its face range
+    // stays one contiguous run.
+    let faces = 0;
+    const add = (geo: THREE.BufferGeometry, hex: string): void => {
+      paint(geo, hex, color);
+      faces += geo.attributes.position!.count / 3; // non-indexed
+      geometries.push(geo);
+    };
+
+    const lower = makeHipRoof(w, d);
+    const { overhang, ridge } = roofMetrics(lower, w);
+    lower.translate(cx, baseY, cz);
+    add(lower, tint);
+    add(makeBracketBand(w, d, overhang, ridge, cx, baseY, cz), BAND_WOOD);
+
+    if (b.roofTiers === 2) {
+      // 重檐: a smaller second roof stacked partway up the lower one, carried
+      // on a short collar of hall wall so it never reads as floating. The lower
+      // roof keeps its full shell — its peak simply hides inside the upper one.
+      const uw = w * UPPER_ROOF_SCALE;
+      const ud = d * UPPER_ROOF_SCALE;
+      const upperY = baseY + ridge * UPPER_EAVE_FRACTION;
+      add(
+        boxSoup(
+          uw + COLLAR_MARGIN,
+          upperY - baseY,
+          ud + COLLAR_MARGIN,
+          cx,
+          (baseY + upperY) / 2,
+          cz,
+        ),
+        COLLAR_TINT,
+      );
+      const upper = makeHipRoof(uw, ud);
+      const upperMetrics = roofMetrics(upper, uw);
+      upper.translate(cx, upperY, cz);
+      add(upper, tint);
+      add(
+        makeBracketBand(uw, ud, upperMetrics.overhang, upperMetrics.ridge, cx, upperY, cz),
+        BAND_WOOD,
+      );
     }
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
     // Roof faces resolve to the hall id so clicking the roof selects the hall
     // (the roof is the hall's dominant, most-clickable silhouette).
-    const faces = count / 3; // non-indexed
     ranges.push({ start: faceOffset, end: faceOffset + faces, id: b.id });
     faceOffset += faces;
-    geometries.push(geo);
   });
 
   const merged = mergeGeometries(geometries, false);

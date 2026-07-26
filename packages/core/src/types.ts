@@ -29,6 +29,8 @@ export type BuildingInfo = {
   category?: string;
   /** Architectural style; omitted = 'modern'. */
   style?: BuildingStyle;
+  /** Chinese-style roofs: stacked eave tiers; omitted = 1. 2 = 重檐(double eave). */
+  roofTiers?: 1 | 2;
   description: string;
   districtId: string;
   position: Vec3;

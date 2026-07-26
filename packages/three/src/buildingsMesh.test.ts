@@ -222,8 +222,9 @@ describe('buildChineseRoofs (via buildBuildingsGroup)', () => {
     expect(cursor).toBe(total); // ranges cover every triangle exactly once
 
     // The ranges must come from the real geometry, not a hardcoded face count.
-    const sizeA = makeHipRoof(4, 4).getAttribute('position').count / 3;
-    const sizeB = makeHipRoof(4, 3).getAttribute('position').count / 3;
+    // C6: each roof is now shell + 斗栱帶 (one box = 12 triangles).
+    const sizeA = makeHipRoof(4, 4).getAttribute('position').count / 3 + BOX_TRIS;
+    const sizeB = makeHipRoof(4, 3).getAttribute('position').count / 3 + BOX_TRIS;
     expect(ranges[0]!.end - ranges[0]!.start).toBe(sizeA);
     expect(ranges[1]!.end - ranges[1]!.start).toBe(sizeB);
     expect(sizeA + sizeB).toBe(total);
@@ -233,9 +234,215 @@ describe('buildChineseRoofs (via buildBuildingsGroup)', () => {
     const mesh = built.roofMesh!;
     mesh.geometry.computeBoundingBox();
     const box = mesh.geometry.boundingBox!;
-    // hallA is 4×4 at the origin: eaves reach ±(2 + 1.12).
+    // hallA is 4×4 at the origin: eaves reach ±(2 + 1.12); the 斗栱帶 juts out
+    // only 0.4 of the overhang, so the eave still owns the silhouette.
     expect(box.min.x).toBeCloseTo(-3.12, 4);
-    // Roof base overlaps the wall top (position.y + height - 0.35 = 5.65).
-    expect(box.min.y).toBeCloseTo(5.65, 4);
+    // Roof base overlaps the wall top (position.y + height - 0.35 = 5.65); the
+    // bracket band hangs h_band = clamp(0.12, 0.3, 2.4 * 0.1) = 0.24 below it.
+    expect(box.min.y).toBeCloseTo(5.65 - 0.24, 4);
+  });
+});
+
+// --- C6 中式建築 v3: 重檐 (double eave) + 斗栱帶 (bracket band) ---------------
+
+/** Frozen C6 parameters, restated so a silent change to them fails. */
+const UPPER_ROOF_SCALE = 0.66;
+const UPPER_EAVE_FRACTION = 0.62;
+const BAND_WOOD = '#6b4a2f';
+const COLLAR_TINT = '#8f4a3c';
+/** A non-indexed box: 6 faces × 2 triangles. */
+const BOX_TRIS = 12;
+
+function bandHeight(ridge: number): number {
+  return Math.min(0.3, Math.max(0.12, ridge * 0.1));
+}
+
+function tris(geo: THREE.BufferGeometry): number {
+  return geo.getAttribute('position').count / 3;
+}
+
+function matches(geo: THREE.BufferGeometry, i: number, c: THREE.Color): boolean {
+  const a = geo.getAttribute('color');
+  return (
+    Math.abs(a.getX(i) - c.r) < 1e-5 &&
+    Math.abs(a.getY(i) - c.g) < 1e-5 &&
+    Math.abs(a.getZ(i) - c.b) < 1e-5
+  );
+}
+
+/** Vertex indices of one face range, plus a few readers over them. */
+function span(
+  mesh: THREE.Mesh,
+  ranges: Array<{ start: number; end: number; id: string }>,
+  id: string,
+): {
+  faces: number;
+  countColor: (hex: string) => number;
+  countAtY: (y: number) => number;
+  maxY: number;
+  maxAbsXAtY: (y: number) => number;
+} {
+  const r = ranges.find((x) => x.id === id)!;
+  const geo = mesh.geometry;
+  const pos = geo.getAttribute('position');
+  const from = r.start * 3;
+  const to = r.end * 3;
+  let maxY = -Infinity;
+  for (let i = from; i < to; i++) maxY = Math.max(maxY, pos.getY(i));
+  return {
+    faces: r.end - r.start,
+    countColor: (hex) => {
+      const c = new THREE.Color(hex);
+      let n = 0;
+      for (let i = from; i < to; i++) if (matches(geo, i, c)) n++;
+      return n;
+    },
+    countAtY: (y) => {
+      let n = 0;
+      for (let i = from; i < to; i++) if (Math.abs(pos.getY(i) - y) < 1e-5) n++;
+      return n;
+    },
+    maxY,
+    maxAbsXAtY: (y) => {
+      let m = 0;
+      for (let i = from; i < to; i++) {
+        if (Math.abs(pos.getY(i) - y) < 1e-5) m = Math.max(m, Math.abs(pos.getX(i)));
+      }
+      return m;
+    },
+  };
+}
+
+describe('C6 重檐 + 斗栱帶', () => {
+  // Same 6×4 plan for both halls, so triangle counts compare directly. The
+  // rampart is aspect-gated out of the roof pass entirely.
+  const W = 6;
+  const D = 4;
+  const capital: BuildingInfo = { ...chineseBuilding('city:test:cap', 0, 0, W, D), roofTiers: 2 };
+  const plain = chineseBuilding('city:test:plain', 40, 0, W, D);
+  const rampart = chineseBuilding('wall:test:1', 0, 40, 12, 0.8);
+  const built = buildBuildingsGroup(worldWith([capital, plain, rampart]));
+  const mesh = built.roofMesh!;
+  const ranges = mesh.userData.faceRanges as Array<{ start: number; end: number; id: string }>;
+
+  // Geometry the renderer derives, recomputed here from the frozen formulas.
+  const baseY = 2 + 4 - 0.35; // position.y + height - 0.35
+  const lowerShell = makeHipRoof(W, D);
+  const lowerRidge = Math.max(1.2, Math.min(W, D) * 0.6);
+  const upperW = W * UPPER_ROOF_SCALE;
+  const upperD = D * UPPER_ROOF_SCALE;
+  const upperShell = makeHipRoof(upperW, upperD);
+  const upperY = baseY + lowerRidge * UPPER_EAVE_FRACTION;
+  const upperRidge = Math.max(1.2, Math.min(upperW, upperD) * 0.6);
+  const upperEaveHalfW = upperW / 2 + Math.max(0.4, Math.min(upperW, upperD) * 0.28);
+
+  const cap = span(mesh, ranges, 'city:test:cap');
+  const one = span(mesh, ranges, 'city:test:plain');
+
+  it('keeps face ranges contiguous, non-overlapping and total-covering', () => {
+    expect(ranges.map((r) => r.id)).toEqual(['city:test:cap', 'city:test:plain']);
+    let cursor = 0;
+    for (const r of ranges) {
+      expect(r.start).toBe(cursor);
+      expect(r.end).toBeGreaterThan(r.start);
+      cursor = r.end;
+    }
+    expect(cursor).toBe(tris(mesh.geometry));
+  });
+
+  it('gives a 斗栱帶 to every roof, doubling nothing else on a single eave', () => {
+    // C5 shipped the bare shell; C6 adds exactly one band box on a tier-1 hall.
+    const bare = tris(lowerShell);
+    expect(one.faces).toBe(bare + BOX_TRIS);
+    expect(one.faces).toBeGreaterThan(bare);
+  });
+
+  it('stacks a second eave on a roofTiers-2 hall (shell + band + collar)', () => {
+    // lower shell + lower band + collar + upper shell + upper band.
+    expect(cap.faces).toBe(tris(lowerShell) + tris(upperShell) + 3 * BOX_TRIS);
+    expect(cap.faces).toBeGreaterThan(one.faces * 1.8);
+  });
+
+  it('colours bands wood and slopes with a roof tint', () => {
+    const wood = new THREE.Color(BAND_WOOD);
+    const collar = new THREE.Color(COLLAR_TINT);
+    // One band box on the single eave, two on the double eave (36 verts each).
+    expect(one.countColor(BAND_WOOD)).toBe(BOX_TRIS * 3);
+    expect(cap.countColor(BAND_WOOD)).toBe(2 * BOX_TRIS * 3);
+    expect(cap.countColor(COLLAR_TINT)).toBe(BOX_TRIS * 3);
+    // Every remaining vertex is a slope vertex, and none of them is wood.
+    const geo = mesh.geometry;
+    const r = ranges[0]!;
+    let slopes = 0;
+    for (let i = r.start * 3; i < r.end * 3; i++) {
+      if (matches(geo, i, wood) || matches(geo, i, collar)) continue;
+      slopes++;
+    }
+    expect(slopes).toBe((tris(lowerShell) + tris(upperShell)) * 3);
+    // The slope tint is a ROOF_TINT, shared by both tiers of the same hall.
+    const first = new THREE.Color(
+      geo.getAttribute('color').getX(r.start * 3),
+      geo.getAttribute('color').getY(r.start * 3),
+      geo.getAttribute('color').getZ(r.start * 3),
+    );
+    expect(['39414d', '333b47', '414a57', '2f3742', '454d58']).toContain(first.getHexString());
+    expect(matches(geo, r.start * 3, wood)).toBe(false);
+    // The upper shell's first vertex (after lower shell + band + collar) too.
+    const upperStart = (r.start + tris(lowerShell) + 2 * BOX_TRIS) * 3;
+    expect(matches(geo, upperStart, first)).toBe(true);
+  });
+
+  it('puts a second eave plane above lowerBase + rH·F only for roofTiers 2', () => {
+    // The upper eave rectangle sits exactly on that plane, and the collar top
+    // and upper band top land on it too — so the plane is densely populated.
+    expect(cap.countAtY(upperY)).toBeGreaterThan(0);
+    expect(cap.maxAbsXAtY(upperY)).toBeCloseTo(upperEaveHalfW, 4);
+    // A tier-1 hall has nothing there, and never climbs past its own ridge.
+    expect(one.countAtY(upperY)).toBe(0);
+    expect(one.maxY).toBeCloseTo(baseY + lowerRidge, 5);
+    expect(cap.maxY).toBeCloseTo(upperY + upperRidge, 5);
+    expect(cap.maxY).toBeGreaterThan(one.maxY);
+    // The upper roof fully covers the lower one's peak — no ridge pokes through.
+    expect(upperY + upperRidge).toBeGreaterThan(baseY + lowerRidge);
+  });
+
+  it('hangs each band just under its own eave, inside the eave line', () => {
+    const geo = mesh.geometry;
+    const pos = geo.getAttribute('position');
+    const wood = new THREE.Color(BAND_WOOD);
+    const r = ranges[0]!;
+    const ys: number[] = [];
+    let maxAbsX = 0;
+    for (let i = r.start * 3; i < r.end * 3; i++) {
+      if (!matches(geo, i, wood)) continue;
+      ys.push(pos.getY(i));
+      maxAbsX = Math.max(maxAbsX, Math.abs(pos.getX(i)));
+    }
+    const lowerBand = bandHeight(lowerRidge);
+    const upperBand = bandHeight(upperRidge);
+    expect(Math.min(...ys)).toBeCloseTo(baseY - lowerBand, 5);
+    expect(Math.max(...ys)).toBeCloseTo(upperY, 5);
+    // Widest band vertex = lower band = W/2 + overhang·0.4, well inside the eave.
+    const lowerOverhang = Math.max(0.4, Math.min(W, D) * 0.28);
+    expect(maxAbsX).toBeCloseTo(W / 2 + lowerOverhang * 0.4, 5);
+    expect(maxAbsX).toBeLessThan(W / 2 + lowerOverhang);
+    // Both bands are shallow shadow lines, not storeys.
+    expect(lowerBand).toBeLessThanOrEqual(0.3);
+    expect(upperBand).toBeGreaterThanOrEqual(0.12);
+  });
+
+  it('leaves non-chinese buildings out of the roof pass entirely', () => {
+    // A modern polygon building (non-rect footprint keeps it off the instanced
+    // path, which needs a canvas) — roofTiers is meaningless without 'chinese'.
+    const modern: BuildingInfo = {
+      ...chineseBuilding('poly:test:m', 80, 0, 6, 4),
+      style: undefined,
+      type: 'company',
+      roofTiers: 2,
+      footprint: [...rect(80, 0, 6, 4), { x: 83, y: 3 }],
+    };
+    const only = buildBuildingsGroup(worldWith([modern]));
+    expect(only.roofMesh).toBeNull();
+    expect(only.polyMesh).toBeTruthy();
   });
 });

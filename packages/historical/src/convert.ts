@@ -209,12 +209,18 @@ export function historicalToWorld(
     const sources = city.sources.join(';');
 
     // Main hall — the selectable, searchable representative of the city.
-    const hallHalf = style.size * 0.18;
+    // Rectangular footprint: 面闊 (world X) wider than 進深 (world Z), so the
+    // hip roof grows an east-west ridge like a south-facing 歇山 hall. The
+    // 1.47 aspect stays under the renderer's 2.5 roof-eligibility gate.
+    const hallHalfW = style.size * 0.22;
+    const hallHalfD = style.size * 0.15;
     const hall: BuildingInfo = {
       id: `city:${data.id}:${city.id}`,
       name,
       type: 'landmark',
       style: 'chinese',
+      // 重檐 for imperial capitals only (resolved kind, so era switching moves it).
+      ...(kind === 'capital' ? { roofTiers: 2 as const } : {}),
       category: faction?.name ?? '群雄',
       description: `${faction?.name ?? ''}${style.label} · ${CONFIDENCE_LABEL[city.confidence]}${
         city.modernName ? ` · 今${city.modernName}` : ''
@@ -222,10 +228,10 @@ export function historicalToWorld(
       districtId,
       position: { x: c.x, y: baseY, z: c.y },
       footprint: [
-        { x: c.x - hallHalf, y: c.y - hallHalf },
-        { x: c.x + hallHalf, y: c.y - hallHalf },
-        { x: c.x + hallHalf, y: c.y + hallHalf },
-        { x: c.x - hallHalf, y: c.y + hallHalf },
+        { x: c.x - hallHalfW, y: c.y - hallHalfD },
+        { x: c.x + hallHalfW, y: c.y - hallHalfD },
+        { x: c.x + hallHalfW, y: c.y + hallHalfD },
+        { x: c.x - hallHalfW, y: c.y + hallHalfD },
       ],
       height: style.hall,
       floors: Math.max(1, Math.round(style.hall)),
