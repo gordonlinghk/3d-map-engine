@@ -65,6 +65,30 @@ export type HistoricalRoute = {
   notes?: string;
 };
 
+/**
+ * A selectable "era snapshot" (年代快照) of the same map: same cities, same
+ * terrain, different owners. Boundaries are stylized by definition, and every
+ * era carries its own sources — the ownership table is an original compilation
+ * from 正史 general knowledge, not a copy of any third-party dataset.
+ */
+export type HistoricalEra = {
+  id: string;
+  /** Representative year CE. */
+  year: number;
+  /** Short label, e.g. '官渡之戰'. */
+  name: string;
+  /** COMPLETE faction set for this era. */
+  factions: HistoricalFaction[];
+  /** cityId → factionId owning it in this era. Must cover EVERY city id exactly. */
+  ownership: Record<string, string>;
+  /** Optional per-era city-kind overrides (e.g. 許昌 was the Han capital in 200). */
+  kindOverrides?: Record<string, HistoricalCityKind>;
+  /** Optional per-era period names (e.g. 建業 was 秣陵 before 211). */
+  nameOverrides?: Record<string, string>;
+  sources: string[];
+  notes?: string;
+};
+
 export type HistoricalMapData = {
   id: string;
   name: string;
@@ -76,6 +100,10 @@ export type HistoricalMapData = {
   factions: HistoricalFaction[];
   rivers: HistoricalRiver[];
   routes: HistoricalRoute[];
+  /** All selectable era snapshots, including the default one. */
+  eras?: HistoricalEra[];
+  /** Era id whose ownership exactly matches the base cities' factionId values. */
+  defaultEra?: string;
   /** Licence/credit lines for the UI. */
   attribution: string[];
   disclaimer: string;

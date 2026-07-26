@@ -32,6 +32,10 @@ export type ToolbarProps = {
   /** Bundled historical maps. */
   historicalOptions?: Array<{ slug: string; name: string }>;
   onLoadHistorical?: (slug: string) => void;
+  /** Selectable era snapshots (年份切換) for the currently loaded historical map. */
+  eraOptions?: Array<{ id: string; year: number; name: string }>;
+  currentEra?: string;
+  onSelectEra?: (id: string) => void;
   /** Building editor (enables the ✏️ toggle). */
   onEditModeToggle?: (enabled: boolean) => void;
 };
@@ -56,6 +60,9 @@ export function Toolbar({
   currentCityName,
   historicalOptions,
   onLoadHistorical,
+  eraOptions,
+  currentEra,
+  onSelectEra,
   onEditModeToggle,
 }: ToolbarProps) {
   const editMode = useAtlasStore((s) => s.editMode);
@@ -306,6 +313,29 @@ export function Toolbar({
                   {historicalOptions.map((m) => (
                     <option key={m.slug} value={m.slug}>
                       {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
+
+          {onSelectEra && eraOptions && eraOptions.length > 0 && (
+            <>
+              <div style={{ borderTop: '1px solid rgba(0,0,0,0.08)', margin: '4px -14px 0' }} />
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>
+                  📅 ERA
+                </span>
+                <select
+                  data-testid="era-select"
+                  value={currentEra ?? ''}
+                  onChange={(e) => onSelectEra(e.target.value)}
+                  style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)' }}
+                >
+                  {eraOptions.map((era) => (
+                    <option key={era.id} value={era.id}>
+                      {era.year}年 · {era.name}
                     </option>
                   ))}
                 </select>

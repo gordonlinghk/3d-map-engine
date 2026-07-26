@@ -64,6 +64,8 @@ export type District = {
     /** Polygon in world XZ coordinates. */
     boundary: Vec2[];
     center: Vec2;
+    /** Territory tint (CSS hex) consumed by the terrain renderer; omitted = no tint. */
+    color?: string;
 };
 export type RoadKind = 'highway' | 'avenue' | 'street' | 'bridge';
 export type RoadNode = {

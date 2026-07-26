@@ -29,6 +29,67 @@ describe('THREE_KINGDOMS data pack', () => {
   });
 });
 
+describe('THREE_KINGDOMS era snapshots', () => {
+  const eras = THREE_KINGDOMS.eras ?? [];
+  const cityIds = THREE_KINGDOMS.cities.map((c) => c.id);
+  const KINDS = ['capital', 'major', 'town', 'pass', 'site'];
+
+  it('bundles the four curated eras and a default', () => {
+    expect(eras.map((e) => e.id)).toEqual(['y200', 'y208', 'y219', 'y229']);
+    expect(eras.some((e) => e.id === THREE_KINGDOMS.defaultEra)).toBe(true);
+  });
+
+  for (const era of eras) {
+    describe(`${era.id} ${era.name}`, () => {
+      it('covers every city id exactly once, with no unknown ids', () => {
+        expect(Object.keys(era.ownership).sort()).toEqual([...cityIds].sort());
+      });
+
+      it('assigns every city to a faction of this era (or neutral)', () => {
+        const ids = new Set(era.factions.map((f) => f.id));
+        for (const [cityId, factionId] of Object.entries(era.ownership)) {
+          expect(
+            factionId === 'neutral' || ids.has(factionId),
+            `${era.id}/${cityId} → ${factionId}`,
+          ).toBe(true);
+        }
+      });
+
+      it('carries provenance and drawable faction boundaries', () => {
+        expect(era.sources.length).toBeGreaterThan(0);
+        expect(era.factions.length).toBeGreaterThan(0);
+        const seen = new Set<string>();
+        for (const f of era.factions) {
+          expect(seen.has(f.id), `${era.id} duplicate faction ${f.id}`).toBe(false);
+          seen.add(f.id);
+          expect(f.color, `${era.id}/${f.id} color`).toMatch(/^#[0-9a-f]{6}$/i);
+          expect(f.boundary.length, `${era.id}/${f.id} boundary`).toBeGreaterThanOrEqual(3);
+        }
+      });
+
+      it('overrides only reference real cities and valid kinds', () => {
+        for (const [cityId, kind] of Object.entries(era.kindOverrides ?? {})) {
+          expect(cityIds, `${era.id} kindOverride ${cityId}`).toContain(cityId);
+          expect(KINDS).toContain(kind);
+        }
+        for (const [cityId, name] of Object.entries(era.nameOverrides ?? {})) {
+          expect(cityIds, `${era.id} nameOverride ${cityId}`).toContain(cityId);
+          expect(name.length).toBeGreaterThan(0);
+        }
+      });
+    });
+  }
+
+  it('the default era reproduces the base cities exactly', () => {
+    const base = eras.find((e) => e.id === THREE_KINGDOMS.defaultEra)!;
+    const expected = Object.fromEntries(THREE_KINGDOMS.cities.map((c) => [c.id, c.factionId]));
+    expect(base.ownership).toEqual(expected);
+    expect(base.factions).toEqual(THREE_KINGDOMS.factions);
+    expect(base.kindOverrides).toBeUndefined();
+    expect(base.nameOverrides).toBeUndefined();
+  });
+});
+
 describe('historicalToWorld', () => {
   const elevation = (lat: number, lon: number): number => {
     // Synthetic China: sea east of 122°E, mountains west of 104°E, plain between.
@@ -102,6 +163,93 @@ describe('historicalToWorld', () => {
     const restored = deserializeMap(JSON.parse(JSON.stringify(serializeMap(world))));
     expect(Object.keys(restored.objects).length).toBe(Object.keys(world.objects).length);
     expect(restored.attribution).toEqual(world.attribution);
+  });
+
+  it('tints faction districts with the faction colour (whole-map district stays untinted)', () => {
+    const whole = world.districts.find((d) => d.id === 'd:hist');
+    expect(whole?.color).toBeUndefined();
+    for (const faction of THREE_KINGDOMS.factions) {
+      const district = world.districts.find((d) => d.id === `d:${faction.id}`);
+      expect(district?.color, `d:${faction.id}`).toBe(faction.color);
+    }
+    expect(world.districts).toHaveLength(THREE_KINGDOMS.factions.length + 1);
+  });
+
+  it('renders an era snapshot: y200 re-assigns owners, kinds, names and districts', () => {
+    const y200 = THREE_KINGDOMS.eras!.find((e) => e.id === 'y200')!;
+    const w = historicalToWorld(THREE_KINGDOMS, { era: 'y200' });
+    expect(w.id).toBe('hist:three-kingdoms:y200');
+    expect(w.seed).toBe('hist-three-kingdoms-y200');
+
+    // Districts come from the era's factions, each carrying its colour.
+    expect(w.districts.map((d) => d.id)).toEqual([
+      'd:hist',
+      ...y200.factions.map((f) => `d:${f.id}`),
+    ]);
+    for (const f of y200.factions) {
+      expect(w.districts.find((d) => d.id === `d:${f.id}`)?.color).toBe(f.color);
+    }
+    expect(w.districts.find((d) => d.id === 'd:hist')?.color).toBeUndefined();
+
+    // 成都 belonged to 劉璋, not 蜀漢 — and was not yet an imperial capital.
+    const liuzhang = y200.factions.find((f) => f.id === 'liuzhang')!;
+    const chengdu = w.objects['city:three-kingdoms:chengdu'];
+    if (chengdu?.objectType !== 'building') throw new Error('missing 成都');
+    expect(chengdu.building.category).toBe(liuzhang.name);
+    expect(chengdu.building.districtId).toBe('d:liuzhang');
+    expect(chengdu.building.tags).toContain(liuzhang.name);
+    expect(chengdu.building.description.startsWith(liuzhang.name)).toBe(true);
+    expect(chengdu.building.metadata?.kind).toBe('major'); // kindOverrides
+    expect(chengdu.building.description).toContain('重鎮');
+
+    // nameOverrides rename the hall and its walls.
+    const jianye = w.objects['city:three-kingdoms:jianye'];
+    if (jianye?.objectType !== 'building') throw new Error('missing 建業');
+    expect(jianye.building.name).toBe('秣陵');
+    const walls = Object.values(w.objects).filter(
+      (o) => o.objectType === 'building' && o.building.name === '秣陵城牆',
+    );
+    expect(walls).toHaveLength(4);
+
+    // 'neutral' ownership renders as 群雄 under the whole-map district.
+    const wudu = w.objects['city:three-kingdoms:wudu'];
+    if (wudu?.objectType !== 'building') throw new Error('missing 武都');
+    expect(wudu.building.category).toBe('群雄');
+    expect(wudu.building.districtId).toBe('d:hist');
+  });
+
+  it('other eras keep the city set and pick up their own owners', () => {
+    for (const id of ['y208', 'y219']) {
+      const era = THREE_KINGDOMS.eras!.find((e) => e.id === id)!;
+      const w = historicalToWorld(THREE_KINGDOMS, { era: id });
+      expect(w.id).toBe(`hist:three-kingdoms:${id}`);
+      const halls = Object.values(w.objects).filter((o) => o.id.startsWith('city:'));
+      expect(halls).toHaveLength(THREE_KINGDOMS.cities.length);
+      for (const city of THREE_KINGDOMS.cities) {
+        const obj = w.objects[`city:three-kingdoms:${city.id}`];
+        if (obj?.objectType !== 'building') throw new Error(`missing ${city.id}`);
+        const owner = era.ownership[city.id]!;
+        const faction = era.factions.find((f) => f.id === owner);
+        expect(obj.building.category, `${id}/${city.id}`).toBe(faction?.name ?? '群雄');
+      }
+    }
+    // 219: 江陵 already lost to 孫權, 上庸 taken by 劉備.
+    const w219 = historicalToWorld(THREE_KINGDOMS, { era: 'y219' });
+    const category = (id: string): string | undefined => {
+      const obj = w219.objects[`city:three-kingdoms:${id}`];
+      return obj?.objectType === 'building' ? obj.building.category : undefined;
+    };
+    expect(category('jiangling')).toBe('孫權');
+    expect(category('shangyong')).toBe('劉備');
+    expect(category('xiangping')).toBe('公孫氏(遼東)');
+  });
+
+  it('the default era and unknown era ids fall back to the base snapshot', () => {
+    const base = JSON.stringify(serializeMap(historicalToWorld(THREE_KINGDOMS)));
+    for (const era of ['y229', 'nonsense', '']) {
+      const other = JSON.stringify(serializeMap(historicalToWorld(THREE_KINGDOMS, { era })));
+      expect(other, `era=${era}`).toBe(base);
+    }
   });
 
   it('works without elevation (flat fallback)', () => {

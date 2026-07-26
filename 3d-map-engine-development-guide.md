@@ -32,7 +32,7 @@
 | OSM 真實城市 | **任意城市搜尋**(Photon geocoding + AREA 1×/2×/3×)+ 4 個精選;Overpass(單發/分塊)→ MapWorld |
 | 真實高程 | terrarium DEM → chunk 高度;建築沉降、湖床壓平、**海面自動出現**(維港);城市與歷史地圖通用 |
 | 大範圍烘焙 | `pnpm bake` CLI:分塊限速抓取(≤8km)→ MapWorld JSON;demo `?world=<url>` 載入 |
-| 歷史地圖 | `?map=three-kingdoms`:戰略尺度(1 unit=1km)三國中國;~50 考據城池(confidence 三級+出處)、勢力、古河道、要道 |
+| 歷史地圖 | `?map=three-kingdoms`:戰略尺度(1 unit=1km)三國中國;~50 考據城池(confidence 三級+出處)、勢力、古河道、要道;**勢力範圍地形著色**(`District.color` → terrainMesh 染色)+ **年份切換**(`?era=y200\|y208\|y219\|y229` 四個 era 快照,見 §2 C3) |
 | 編輯器 | 拖曳移動、樓高、旋轉、增刪、undo/redo、localStorage autosave、匯出 JSON——對全部世界類型可用 |
 | 草稿檔 | `.mapdraft.json` 可攜帶續編草稿(overlay+base 配方/快照);FSA 覆寫存檔;跨機器 |
 
@@ -108,7 +108,7 @@
 - **易錯點**:Pages deploy 可能暫時性失敗(“try again later”,本項目發生過 3 次);**同一 run 重跑會產生兩個同名 artifact 而再失敗——正確做法是 `gh workflow run` 觸發全新 run**。
 - **驗證**:CI 綠 + live URL 截圖。
 
-### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10 → B11 → B12 → B13 →(數據來源調研)→ A5 → B14 → B15 → C1 → C2
+### 後續迭代(按序):A3 → B9 → C10 → B5 → A2 → A4 → B8 → B7 → B6 → B10 → B11 → B12 → B13 →(數據來源調研)→ A5 → B14 → B15 → C1 → C2 → C3
 
 | 代號 | 內容 | 關鍵檔案 | 一句話要點 |
 |---|---|---|---|
@@ -131,6 +131,7 @@
 | C1 | 遊戲邏輯層 SDK | **新包 `packages/game/*`**(零 DOM/Three)、`three/gameView.ts`、`three/cameraRig.ts`+`renderer.ts`(鏡頭跟隨)、`demo/App.tsx`(`?game=1`)、`e2e/game.spec.ts` | **以多 agent workflow 交付**(Opus 寫 A*/模擬核心 + 鏡頭跟隨、Sonnet 寫 gameView 綁定 + demo/e2e、Haiku 全路徑 QA、獨立 clean-session Opus 終審);`@map-engine/game` = **A\* 尋路**(道路圖無向、cost=幾何 XZ 長度 → 直線啟發式 admissible/consistent → 最短路;二元堆積、tie-break 確定性)+ **單位模擬**(`tick(dt)` 沿路徑推進、貼地取樣、heading、事件 spawned/waypoint/arrived/removed;flush 具重入保護保證嚴格發射順序;全確定性)+ `buildGraphIndex`/`nearestNode`/`findPath`;`three/createGameView` = 每單位一 marker、每幀 tick sim + 同步、`followUnit`;**鏡頭跟隨**新增 `cameraRig.setFollowTarget` + `renderer.setFollowTarget`(update 分支序 tween > follow > orbit/free;**坑:follow 會關 orbit.enabled → setMode/goHome/focusOn 取消跟隨必須經 `stopFollow()` 還原,否則相機鎖死**——終審抓到並修);demo `?game=1` 全 gated(單位生在同一連通分量保證互可達,點地面 → lead 單位尋路);單元測試 23(pathfinding 10 + simulation 13) |
 | C2 | 中式建築風格 | `core/types.ts`(`BuildingStyle`)、`historical/convert.ts`、`three/buildingsMesh.ts`+`interaction.ts`、`e2e/historical.spec.ts` | **多 agent workflow 交付**(Opus 核心幾何/Sonnet 視覺驗證+e2e/Haiku QA/獨立 Opus 終審);`BuildingInfo` 加**可選** `style?: 'modern'\|'chinese'`(additive,modern 無影響);三國城池主殿+城牆標 `style:'chinese'`;渲染關鍵設計:**chinese 建築改走合併多邊形 body 路徑**(暖牆無玻璃、經 faceRanges 可 pick——picker 免改)+ 疊加合併 **歇山/廡殿式屋頂 mesh**(`makeHipRoof`:base 依 w/d、脊沿長軸、DoubleSide 免管繞向、簷口外挑;方形退化為攢尖;瓦色青灰、牆色木紅/夯土;長條城牆按長寬比 gate 不加頂);night 由 poly 暖光沿用。**終審抓到並修的真 bug:屋頂高於牆身+外挑,只 raycast body → 點屋頂會 miss 反而取消選取(halls 本是可點方塊,屬回退)→ 給屋頂 mesh 也建 faceRanges 並將 picker 的 polyMesh 區塊抽成 `resolveMerged` 同時處理 body+roof**(獨立 Opus 複審 APPROVE)。 |
 | B15 | POI 註記系統 | `core/edits.ts`(overlay v2)、`three/poisGroup.ts`+`editor.ts`、`ui/EditorPanel.tsx` | **首次以多 agent workflow 交付**(Opus 核心遷移/Sonnet 常規/Haiku QA/獨立 Opus 終審);`PoiInfo` + MapObject poi 變體 + 圖層 'pois';**EditOverlay v1→v2**(+addedPois/modifiedPois/deletedPois),`normalizeOverlay()` 讓舊 localStorage/草稿無損遷移(所有讀取入口必須經它);編輯器 📍 poiMode(與 addMode 互斥)、rename/icon/delete 全走 Command(undo/redo 自然生效)、`renderer.refreshPois()`;POI 進 entries(kind 'poi')可搜尋。**坑:zero-POI 世界不可 eager 建共享幾何(disposeObject 只釋放掛在 mesh 上的資源)** |
+| C3 | 勢力著色 + 年份切換 | `core/types.ts`(`District.color`)、`three/terrainMesh.ts`、`historical/types.ts`(`HistoricalEra`)、`historical/convert.ts`、`historical/data/threeKingdoms.ts`(4 era)、`ui/Toolbar.tsx`(era select)、`demo/App.tsx`(`?era=`)、`e2e/historical.spec.ts` | `District` 加**可選** `color?: string`(additive,不設色的世界零影響);`terrainMesh.ts` 對海平面以上頂點,依所在有色 district 把顏色 `lerp` 0.45 朝其 `color`——重疊多邊形**按面積小到大排序**測試,保證飛地(小勢力嵌在大勢力邊界內)贏得染色;`historicalToWorld(data,{era})` 新增 `era` 選項:不傳/傳 `defaultEra`/傳未知 id 一律回退基準快照(`world.id='hist:three-kingdoms'`),傳合法 era id 則依該 era 的 `ownership`(cityId→factionId,`'neutral'` 合法)、`kindOverrides`、`nameOverrides` 重新賦權/改名/變更主殿風格,`world.id='hist:three-kingdoms:<eraId>'`;三國資料包新增 **4 個 era**:y200 官渡之戰(9 勢力)、y208 赤壁前夕(8 勢力)、y219 襄樊之戰後(4 勢力)、y229 三國鼎立(= 基準資料,預設);每個 era 的 ownership 為原始整理自正史,皆帶 `sources`。Demo:`?era=` URL 參數;Toolbar 📅 ERA `<select>`(`data-testid="era-select"`)只在歷史地圖且定義了 eras 時出現,選預設 era 會清空 `?era`;草稿 `sourceSlug` 內嵌 era(`hist:three-kingdoms:y200`),開檔還原對應 era。單元測試新增 `three/terrainMesh.test.ts`(6)+ historical 測試 7→29,基線變 141/16 檔;e2e 檔案數不變(仍 18 個 spec 檔)但 `historical.spec.ts` 測試數 3→6(era 切換 + 勢力著色)。 |
 
 ---
 
@@ -181,6 +182,8 @@ graph TD
 | 草稿檔 base 二分:procedural 存配方、imported 內嵌快照 | 網絡來源(OSM/DEM)會漂移,快照凍結是唯一可靠重現方式;開檔時 `sanitizeOverlayForWorld` 剔除失效引用 |
 | `world.attribution?: string[]`(core 可選欄位) | 資料來源的授權署名義務由資料層寫入、UI 層自動渲染;新來源接入時**必須**寫入其署名 |
 | 世界尺度不固定:城市世界 1 unit=1m,戰略世界 1 unit=1km | 渲染層大多尺度無關,但**調過的常數要注意**:fog 距離已按 `fogScale=max(1, worldHalf/800)` 縮放;相機 far=6000;道路寬度/物件尺寸由資料層按尺度給 |
+| 勢力著色 = 資料驅動 `District.color`,不是 renderer 特判 | 任何世界只要在 district 上填 `color` 就會被 `terrainMesh` 染色(smallest-area-first 保飛地),procedural/OSM 從不設色故零影響——新資料來源要「勢力範圍視覺化」直接複用,不用碰渲染代碼 |
+| 年份切換 = **有限 era 快照**,不是逐年模擬 | `HistoricalEra` 是手工整理的完整 ownership 表(每城市每 era 都要覆蓋),不是規則引擎推導;好處是每筆都可標 `sources`、可審查;代價是「兩個快照之間」的年份無法內插,新增年份 = 新增一筆完整 era 資料 |
 
 ### 3.4 改 X 會牽動 Y 速查表
 
@@ -360,7 +363,7 @@ pnpm dev
 
 - **加城池/河流/路線**:直接改 `historical/src/data/threeKingdoms.ts`(TS 常量,有型別);**每筆必帶 `confidence` + `sources`**;單元測試自動校驗(勢力引用、bbox 範圍、路線城市存在)。座標可用 Wikidata(CC0)查、以 TGAZ API 逐點核對(**不可**成套匯入 CHGIS——授權禁再散布)。
 - **加新歷史地圖**(如楚漢、戰國):新建 `data/xxx.ts` 遵循 `HistoricalMapData` schema → 加入 `HISTORICAL_MAPS` registry → URL `?map=xxx` 與 Toolbar 選單自動生效。
-- **三國 v2 候選**(記錄在案):中式建築風格(目前主殿用現代窗戶貼圖,違和)、勢力範圍地形著色(district boundary 已存好)、年份切換(220 vs 262)、更多城池/戰役標記。
+- **三國 v2 候選**(記錄在案):~~中式建築風格~~(C2 已做)、~~勢力範圍地形著色~~(C3 已做,見 §2 C3 列)、~~年份切換~~(C3 已做:y200/y208/y219/y229 四個 era,見 §2 C3 列;非逐年,新增年份 = 新增一筆完整 era 資料)、更多城池/戰役標記(仍待做)。
 
 ---
 
@@ -380,7 +383,7 @@ pnpm dev
 
 ### 7.2 動手前檢查
 
-- [ ] `pnpm install && pnpm typecheck && pnpm lint && pnpm test` 全綠(基線 **113 unit / 15 檔**;C1 增 game 包的 pathfinding + simulation 共 23)
+- [ ] `pnpm install && pnpm typecheck && pnpm lint && pnpm test` 全綠(基線 **141 unit / 16 檔**;C1 增 game 包的 pathfinding + simulation 共 23,C3 增 `three/terrainMesh.test.ts`(6)並把 historical 測試從 6 擴到 29)
 - [ ] `npx playwright install chromium`(首次)後 `npx playwright test --workers=2` 全綠(**18 個 spec 檔**,3 viewport;本機別開太多 workers,見 §5.5)
 - [ ] 確認要改的部分在 §3.4 速查表中會牽動誰
 - [ ] 若改生成邏輯:想清楚舊 `EditOverlay`(localStorage)、`.mapdraft.json` 草稿與舊分享 URL(cfg/seed/bbox/map)是否仍能載入
@@ -404,7 +407,7 @@ pnpm dev
 | 真機效能基線 | 用戶確認「無卡頓」(含 shadow),但無量化 FPS 數據;18k 棟(渋谷 2×)實測可渲染 |
 | C11 視覺 pixel-diff 基線 | 未做(候選項) |
 | OSM v2 剩餘項 | multipolygon relations(高程與海面已由 A5 解決) |
-| 三國 v2 | 中式建築風格 / 勢力著色 / 年份切換(見 §6.7) |
+| 三國 v2 | 中式建築風格(C2)、勢力著色 / 年份切換(C3)皆已做;剩更多城池/戰役標記(見 §6.7) |
 | 動態磁磚串流(調研方案 C) | 未做——「無縫超大世界」的長期方向,工程量 3-5 sessions |
 | Playwright large viewport project | 存在但 CI 只跑 desktop+mobile |
 

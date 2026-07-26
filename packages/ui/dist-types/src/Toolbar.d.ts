@@ -26,7 +26,15 @@ export type ToolbarProps = {
         name: string;
     }>;
     onLoadHistorical?: (slug: string) => void;
+    /** Selectable era snapshots (年份切換) for the currently loaded historical map. */
+    eraOptions?: Array<{
+        id: string;
+        year: number;
+        name: string;
+    }>;
+    currentEra?: string;
+    onSelectEra?: (id: string) => void;
     /** Building editor (enables the ✏️ toggle). */
     onEditModeToggle?: (enabled: boolean) => void;
 };
-export declare function Toolbar({ onTourToggle, tourActive, onReset, onGenerate, onPromptGenerate, initialApiKey, cityOptions, onLoadCity, onSearchCities, onSelectCity, currentCityName, historicalOptions, onLoadHistorical, onEditModeToggle, }: ToolbarProps): import("react").JSX.Element;
+export declare function Toolbar({ onTourToggle, tourActive, onReset, onGenerate, onPromptGenerate, initialApiKey, cityOptions, onLoadCity, onSearchCities, onSelectCity, currentCityName, historicalOptions, onLoadHistorical, eraOptions, currentEra, onSelectEra, onEditModeToggle, }: ToolbarProps): import("react").JSX.Element;

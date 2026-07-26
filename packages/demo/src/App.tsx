@@ -141,6 +141,13 @@ export function App() {
   const [engine, setEngine] = useState<{ renderer: ThreeMapRenderer; world: MapWorld } | null>(
     null,
   );
+  // Era (年份) selector state for the currently loaded historical map, if any —
+  // null for procedural/OSM/baked worlds so Toolbar never receives eraOptions.
+  const [eraState, setEraState] = useState<{
+    options: Array<{ id: string; year: number; name: string }>;
+    defaultEra: string | undefined;
+    currentEra: string;
+  } | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -206,13 +213,26 @@ export function App() {
             console.warn('Elevation unavailable — flat historical map', err);
           }
         }
-        world = historicalToWorld(historicalMap, { elevation });
+        // Era (年份) selector: an unknown/missing ?era= falls back to the
+        // map's default snapshot (historicalToWorld also guards against this,
+        // but resolving it here lets us compute the Toolbar's currentEra).
+        const eraParam = params.get('era');
+        const validEra =
+          eraParam && historicalMap.eras?.some((x) => x.id === eraParam) ? eraParam : undefined;
+        world = historicalToWorld(historicalMap, { elevation, era: validEra });
         base = {
           kind: 'imported',
-          sourceSlug: `hist:${historicalMap.id}`,
+          sourceSlug: world.id,
           sourceName: historicalMap.name,
           snapshot: serializeMap(world),
         };
+        if (historicalMap.eras && historicalMap.eras.length > 0) {
+          setEraState({
+            options: historicalMap.eras.map((x) => ({ id: x.id, year: x.year, name: x.name })),
+            defaultEra: historicalMap.defaultEra,
+            currentEra: validEra ?? historicalMap.defaultEra ?? historicalMap.eras[0]!.id,
+          });
+        }
         env = params.get('env') ? env : 'golden-hour';
       } else if (worldUrl) {
         // Pre-baked world file (see `pnpm bake`) — a full serialized MapWorld.
@@ -461,8 +481,11 @@ export function App() {
           // Pre-baked world file.
           url.searchParams.set('world', draft.base.sourceSlug.slice(4));
         } else if (draft.base.sourceSlug.startsWith('hist:')) {
-          // Bundled historical map.
-          url.searchParams.set('map', draft.base.sourceSlug.slice(5));
+          // Bundled historical map — sourceSlug is the era world's id, e.g.
+          // "hist:three-kingdoms" or "hist:three-kingdoms:y200".
+          const [mapId, eraId] = draft.base.sourceSlug.slice(5).split(':');
+          if (mapId) url.searchParams.set('map', mapId);
+          if (eraId) url.searchParams.set('era', eraId);
         } else {
           url.searchParams.set('city', draft.base.sourceSlug);
         }
@@ -516,6 +539,16 @@ export function App() {
   const loadHistorical = (slug: string): void => {
     const url = new URL(window.location.origin + window.location.pathname);
     url.searchParams.set('map', slug);
+    // Eras are specific to the map they were selected on — don't carry one
+    // over to a (possibly era-less) map switch.
+    url.searchParams.delete('era');
+    window.location.href = url.toString();
+  };
+
+  const selectEra = (id: string): void => {
+    const url = new URL(window.location.href);
+    if (id === eraState?.defaultEra) url.searchParams.delete('era');
+    else url.searchParams.set('era', id);
     window.location.href = url.toString();
   };
 
@@ -600,6 +633,9 @@ export function App() {
           onSelectCity={selectCity}
           historicalOptions={Object.values(HISTORICAL_MAPS).map((m) => ({ slug: m.id, name: m.name }))}
           onLoadHistorical={loadHistorical}
+          eraOptions={eraState?.options}
+          currentEra={eraState?.currentEra}
+          onSelectEra={eraState ? selectEra : undefined}
           currentCityName={
             engine.world.id.startsWith('osm:') ? engine.world.id.slice(4) : undefined
           }

@@ -4,6 +4,7 @@ export type {
   Confidence,
   HistoricalCity,
   HistoricalCityKind,
+  HistoricalEra,
   HistoricalFaction,
   HistoricalMapData,
   HistoricalRiver,

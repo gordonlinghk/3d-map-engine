@@ -10,7 +10,7 @@ import type {
   RoadNode,
   Vec2,
 } from '@map-engine/core';
-import type { HistoricalCity, HistoricalMapData, LatLon } from './types';
+import type { HistoricalCity, HistoricalEra, HistoricalMapData, LatLon } from './types';
 
 /**
  * Strategy-scale conversion: 1 world unit = 1 km (not 1 m like city maps).
@@ -27,7 +27,16 @@ export type HistoricalConvertOptions = {
   verticalScale?: number;
   /** Sea threshold in metres — at/below renders as water. */
   seaLevel?: number;
+  /**
+   * Era snapshot id (see `HistoricalMapData.eras`). Omitted, equal to
+   * `defaultEra`, or unknown (e.g. garbage from a URL) all render the base
+   * snapshot rather than throwing.
+   */
+  era?: string;
 };
+
+/** Ownership value meaning "no faction" — rendered as 群雄 under the whole-map district. */
+const NEUTRAL = 'neutral';
 
 const KM_PER_DEG_LAT = 110.574;
 const KM_PER_DEG_LON_EQUATOR = 111.32;
@@ -56,6 +65,12 @@ export function historicalToWorld(
   options: HistoricalConvertOptions = {},
 ): MapWorld {
   const { elevation, verticalScale = 0.012, seaLevel = 0 } = options;
+  // Unknown / default era ids fall back to the base snapshot (never throw).
+  const era: HistoricalEra | undefined =
+    options.era === undefined || options.era === data.defaultEra
+      ? undefined
+      : data.eras?.find((x) => x.id === options.era);
+  const factions = era?.factions ?? data.factions;
   const [s, w, n, e] = data.bbox;
   const lat0 = (s + n) / 2;
   const lon0 = (w + e) / 2;
@@ -178,13 +193,17 @@ export function historicalToWorld(
     objects[obj.id] = obj;
     chunkFor(at)?.objectIds.push(obj.id);
   };
-  const factionById = new Map(data.factions.map((f) => [f.id, f]));
+  const factionById = new Map(factions.map((f) => [f.id, f]));
 
   let wallN = 0;
   for (const city of data.cities) {
     const c = project(city.position);
-    const style = CITY_STYLE[city.kind];
-    const faction = factionById.get(city.factionId);
+    const kind = era?.kindOverrides?.[city.id] ?? city.kind;
+    const name = era?.nameOverrides?.[city.id] ?? city.name;
+    const factionId = era ? (era.ownership[city.id] ?? NEUTRAL) : city.factionId;
+    const style = CITY_STYLE[kind];
+    const faction = factionById.get(factionId);
+    const districtId = faction ? `d:${factionId}` : 'd:hist';
     const ground = sampleGround(c.x, c.y);
     const baseY = Math.max(ground, config.waterLevel + 0.2);
     const sources = city.sources.join(';');
@@ -193,14 +212,14 @@ export function historicalToWorld(
     const hallHalf = style.size * 0.18;
     const hall: BuildingInfo = {
       id: `city:${data.id}:${city.id}`,
-      name: city.name,
+      name,
       type: 'landmark',
       style: 'chinese',
       category: faction?.name ?? '群雄',
       description: `${faction?.name ?? ''}${style.label} · ${CONFIDENCE_LABEL[city.confidence]}${
         city.modernName ? ` · 今${city.modernName}` : ''
       }${city.notes ? ` — ${city.notes}` : ''}`,
-      districtId: `d:${city.factionId}`,
+      districtId,
       position: { x: c.x, y: baseY, z: c.y },
       footprint: [
         { x: c.x - hallHalf, y: c.y - hallHalf },
@@ -216,7 +235,7 @@ export function historicalToWorld(
         imported: true,
         historical: true,
         faction: faction?.name ?? '',
-        kind: city.kind,
+        kind,
         confidence: city.confidence,
         sources,
         ...(city.modernName ? { modern: city.modernName } : {}),
@@ -239,13 +258,13 @@ export function historicalToWorld(
         const id = `wall:${data.id}:${wallN}`;
         const wall: BuildingInfo = {
           id,
-          name: `${city.name}城牆`,
+          name: `${name}城牆`,
           // 'residential' keeps walls out of the searchable entries list.
           type: 'residential',
           style: 'chinese',
           category: 'Wall',
-          description: `${city.name}的城垣(示意)。`,
-          districtId: `d:${city.factionId}`,
+          description: `${name}的城垣(示意)。`,
+          districtId,
           position: { x: (a.x + b.x) / 2, y: baseY, z: (a.y + b.y) / 2 },
           footprint: [
             { x: a.x, y: a.y },
@@ -307,19 +326,20 @@ export function historicalToWorld(
       ],
       center: { x: 0, y: 0 },
     },
-    ...data.factions.map((f): District => {
+    ...factions.map((f): District => {
       const boundary = f.boundary.map(project);
       const center = boundary.reduce(
         (acc, p) => ({ x: acc.x + p.x / boundary.length, y: acc.y + p.y / boundary.length }),
         { x: 0, y: 0 },
       );
-      return { id: `d:${f.id}`, name: f.name, kind: 'commercial', boundary, center };
+      // Territory tint — the terrain renderer paints the faction's colour here.
+      return { id: `d:${f.id}`, name: f.name, kind: 'commercial', boundary, center, color: f.color };
     }),
   ];
 
   return {
-    id: `hist:${data.id}`,
-    seed: `hist-${data.id}`,
+    id: era ? `hist:${data.id}:${era.id}` : `hist:${data.id}`,
+    seed: era ? `hist-${data.id}-${era.id}` : `hist-${data.id}`,
     config,
     chunks,
     objects,

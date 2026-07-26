@@ -14,5 +14,11 @@ export type HistoricalConvertOptions = {
     verticalScale?: number;
     /** Sea threshold in metres — at/below renders as water. */
     seaLevel?: number;
+    /**
+     * Era snapshot id (see `HistoricalMapData.eras`). Omitted, equal to
+     * `defaultEra`, or unknown (e.g. garbage from a URL) all render the base
+     * snapshot rather than throwing.
+     */
+    era?: string;
 };
 export declare function historicalToWorld(data: HistoricalMapData, options?: HistoricalConvertOptions): MapWorld;

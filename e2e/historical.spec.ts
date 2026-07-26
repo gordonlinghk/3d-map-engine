@@ -122,3 +122,85 @@ test('historical map is reachable from the world panel', async ({ page }) => {
     { timeout: 30_000 },
   );
 });
+
+test('era selector offers all snapshots and defaults to 229', async ({ page }) => {
+  await page.route('**/elevation-tiles-prod/**', (route) =>
+    route.fulfill({ body: HILL_PNG, contentType: 'image/png' }),
+  );
+  await page.goto('/?map=three-kingdoms');
+  await page.waitForFunction(
+    () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__mapEngine?.world?.id === 'hist:three-kingdoms',
+    undefined,
+    { timeout: 30_000 },
+  );
+
+  await page.getByTestId('world-toggle').click();
+  const eraSelect = page.getByTestId('era-select');
+  await expect(eraSelect).toBeVisible();
+  await expect(eraSelect.locator('option')).toHaveCount(4);
+  await expect(eraSelect).toHaveValue('y229');
+});
+
+test('era selector switches historical map ownership by year and back', async ({ page }) => {
+  await page.route('**/elevation-tiles-prod/**', (route) =>
+    route.fulfill({ body: HILL_PNG, contentType: 'image/png' }),
+  );
+  await page.goto('/?map=three-kingdoms');
+  await page.waitForFunction(
+    () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__mapEngine?.world?.id === 'hist:three-kingdoms',
+    undefined,
+    { timeout: 30_000 },
+  );
+
+  // Switch to 官渡之戰 (200 CE) — 成都 was still held by 劉璋 at this point.
+  await page.getByTestId('world-toggle').click();
+  const navToY200 = page.waitForEvent('framenavigated');
+  await page.getByTestId('era-select').selectOption('y200');
+  await navToY200;
+  expect(new URL(page.url()).searchParams.get('era')).toBe('y200');
+  await page.waitForFunction(
+    () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__mapEngine?.world?.id === 'hist:three-kingdoms:y200',
+    undefined,
+    { timeout: 30_000 },
+  );
+  const chengduFactionY200 = await page.evaluate(
+    () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__mapEngine.world.objects['city:three-kingdoms:chengdu']?.building?.category,
+  );
+  expect(chengduFactionY200).toBe('劉璋');
+
+  // A fresh page load re-renders the toolbar closed — reopen the world panel
+  // before switching back to the default era (229 CE).
+  await page.getByTestId('world-toggle').click();
+  await expect(page.getByTestId('era-select')).toHaveValue('y200');
+  const navToDefault = page.waitForEvent('framenavigated');
+  await page.getByTestId('era-select').selectOption('y229');
+  await navToDefault;
+  expect(new URL(page.url()).searchParams.get('era')).toBeNull();
+  await page.waitForFunction(
+    () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__mapEngine?.world?.id === 'hist:three-kingdoms',
+    undefined,
+    { timeout: 30_000 },
+  );
+});
+
+test('era selector is not present on the procedural map', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(
+    () => !!(window as never as { __mapEngine?: unknown }).__mapEngine,
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.getByTestId('world-toggle').click();
+  await expect(page.getByTestId('world-panel')).toBeVisible();
+  await expect(page.getByTestId('era-select')).toHaveCount(0);
+});
