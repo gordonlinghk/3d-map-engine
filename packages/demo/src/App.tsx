@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyDirectives,
   applyEditOverlay,
@@ -36,8 +36,9 @@ import { getStoredApiKey, promptToDirectives, storeApiKey } from './promptToMap'
 import { applyTerrainToWorld, fetchElevationGrid } from '@map-engine/terrain';
 import { HISTORICAL_MAPS, historicalToWorld } from '@map-engine/historical';
 import { saveDraftFile, stashPendingDraft, takePendingDraft } from './drafts';
-import { setupGameDemo } from './gameSetup';
-import type { GameDemoHandles } from './gameSetup';
+import { isGameModeUrl, setupGameDemo } from './gameSetup';
+import type { GameController } from './gameSetup';
+import { GameUI } from './game/GameUI';
 
 const DEFAULT_SEED = 'sf-atlas-001';
 const DEFAULT_PRESET: MapPresetId = 'coastal-tech-city';
@@ -119,10 +120,18 @@ function readUrlParams(): {
 }
 
 export function App() {
+  // The URL alone decides Atlas vs. game mode — computed once, independent of
+  // whether the game controller ends up booting (it may not, e.g. on a
+  // historical-map load failure), so a non-game URL never mounts any part of
+  // the game UI and a game URL never mounts AtlasUI.
+  const isGameMode = useMemo(
+    () => isGameModeUrl(new URLSearchParams(window.location.search)),
+    [],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const tourRef = useRef<Tour | null>(null);
   const editorRef = useRef<BuildingEditor | null>(null);
-  const gameDemoRef = useRef<GameDemoHandles | null>(null);
+  const gameDemoRef = useRef<GameController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // How to rebuild the current base world + identity of the draft being edited.
   const draftRef = useRef<{
@@ -344,18 +353,18 @@ export function App() {
         editor,
       };
 
-      // Opt-in game-layer demo — fully inert unless `?game=1` is present, so
-      // it cannot affect the default demo or the existing e2e suite.
-      const gameDemo = setupGameDemo(renderer, world, params);
-      if (gameDemo) {
-        gameDemoRef.current = gameDemo;
+      // Opt-in scenario game layer — null unless `?game=1` is present on a
+      // historical world, and even then it only builds a lobby. The simulation,
+      // view and AI controllers appear on `__mapEngine` (set by the controller
+      // itself) once `start()` is called.
+      const gameController = setupGameDemo(renderer, world, params);
+      if (gameController) {
+        gameDemoRef.current = gameController;
         const me = (window as unknown as Record<string, unknown>).__mapEngine as Record<
           string,
           unknown
         >;
-        me.game = gameDemo.sim;
-        me.gameView = gameDemo.view;
-        me.gameAis = gameDemo.ais;
+        me.gameController = gameController;
       }
 
       setEngine({ renderer, world });
@@ -557,34 +566,39 @@ export function App() {
           if (file) void openDraftFile(file);
         }}
       />
-      {engine && (
-        <AtlasUI
-          renderer={engine.renderer}
-          world={engine.world}
-          onReset={reset}
-          onGenerate={generate}
-          editor={editorRef.current ?? undefined}
-          onExportWorld={exportWorld}
-          onSaveDraft={() => void saveDraft()}
-          onOpenDraft={openDraft}
-          onLoadCity={loadCity}
-          cityOptions={Object.values(CITY_PRESETS).map((c) => ({ slug: c.slug, name: c.name }))}
-          onSearchCities={searchCities}
-          onSelectCity={selectCity}
-          historicalOptions={Object.values(HISTORICAL_MAPS).map((m) => ({ slug: m.id, name: m.name }))}
-          onLoadHistorical={loadHistorical}
-          eraOptions={eraState?.options}
-          currentEra={eraState?.currentEra}
-          onSelectEra={eraState ? selectEra : undefined}
-          currentCityName={
-            engine.world.id.startsWith('osm:') ? engine.world.id.slice(4) : undefined
-          }
-          onPromptGenerate={generateFromPrompt}
-          initialApiKey={getStoredApiKey()}
-          onTourToggle={toggleTour}
-          tourActive={tourActive}
-        />
-      )}
+      {engine &&
+        (isGameMode
+          ? gameDemoRef.current && (
+              <GameUI controller={gameDemoRef.current} renderer={engine.renderer} />
+            )
+          : (
+              <AtlasUI
+                renderer={engine.renderer}
+                world={engine.world}
+                onReset={reset}
+                onGenerate={generate}
+                editor={editorRef.current ?? undefined}
+                onExportWorld={exportWorld}
+                onSaveDraft={() => void saveDraft()}
+                onOpenDraft={openDraft}
+                onLoadCity={loadCity}
+                cityOptions={Object.values(CITY_PRESETS).map((c) => ({ slug: c.slug, name: c.name }))}
+                onSearchCities={searchCities}
+                onSelectCity={selectCity}
+                historicalOptions={Object.values(HISTORICAL_MAPS).map((m) => ({ slug: m.id, name: m.name }))}
+                onLoadHistorical={loadHistorical}
+                eraOptions={eraState?.options}
+                currentEra={eraState?.currentEra}
+                onSelectEra={eraState ? selectEra : undefined}
+                currentCityName={
+                  engine.world.id.startsWith('osm:') ? engine.world.id.slice(4) : undefined
+                }
+                onPromptGenerate={generateFromPrompt}
+                initialApiKey={getStoredApiKey()}
+                onTourToggle={toggleTour}
+                tourActive={tourActive}
+              />
+            ))}
       {!ready && (
         <div
           data-testid="loading-overlay"

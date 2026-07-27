@@ -1,332 +1,588 @@
-import type { BuildingInfo, MapObject, MapWorld, Vec3 } from '@map-engine/core';
+import type { MapWorld, Vec3 } from '@map-engine/core';
 import type {
   AiController,
   FactionDefinition,
   GameSimulation,
-  RoadGraphIndex,
   SiteDefinition,
+  UnitId,
 } from '@map-engine/game';
-import { buildGraphIndex, createAiController, createGameSimulation, nearestNode } from '@map-engine/game';
+import { createAiController, createGameSimulation, nearestNode } from '@map-engine/game';
 import type { GameView, ThreeMapRenderer } from '@map-engine/three';
 import { createGameView } from '@map-engine/three';
+import type { Scenario } from './game/scenario';
+import { JINGZHOU_219, scenarioBuildingId } from './game/scenario';
 
 /**
- * Opt-in game-layer demo — fully inert unless `?game=1` is present, so it
- * cannot affect the default demo or the existing e2e suite.
+ * Scenario-driven game controller for the demo.
  *
- * C8 adds capturable sites, faction resources and (behind `?ai=1`) an AI
- * opponent on top of the C1/C7 unit-movement-and-combat sandbox. This module
- * derives sites/factions from the *demo's* knowledge of the world (historical
- * vs procedural/OSM) — `@map-engine/game` itself never learns about
- * historical or procedural worlds.
+ * C9 attaches the game layer to the **Three Kingdoms historical map only**: a
+ * fixed `Scenario` (`JINGZHOU_219`) names the cities, factions, colors, unit
+ * stats and win/lose copy, and this module turns that into a
+ * `@map-engine/game` simulation plus a `@map-engine/three` view. On procedural
+ * or OSM worlds `?game=1` is completely inert — `setupGameDemo` returns null
+ * and nothing is created (the C8 procedural sandbox, its BFS spawn picks and
+ * its DOM HUD are gone).
+ *
+ * The controller is UI-agnostic: it owns simulation + view + input and exposes
+ * a small observable snapshot (`getState`/`subscribe`) plus screen-space city
+ * labels, so the React layer can render a lobby, a status bar and an end
+ * overlay without knowing anything about Three.js or `@map-engine/game`.
+ *
+ * Lifecycle: `setupGameDemo` only ever produces a **lobby** — no simulation, no
+ * view, no listeners. `start(factionId)` builds everything; `dispose()` undoes
+ * whatever exists in whichever phase it runs, so it is safe under React
+ * StrictMode's mount/unmount/mount.
  */
 
-export type GameDemoHandles = {
-  sim: GameSimulation;
-  view: GameView;
-  ais: AiController[];
-  /** Removes the click handler, the HUD element + its stylesheet, the AI frame hook and the view. */
+export type GamePhase = 'lobby' | 'playing' | 'won' | 'lost';
+
+export type FactionStatus = {
+  id: string;
+  name: string;
+  color: string;
+  /** Sites currently owned. */
+  cityCount: number;
+  resources: number;
+  unitCount: number;
+  isPlayer: boolean;
+};
+
+export type GameSelection =
+  | {
+      kind: 'unit';
+      id: UnitId;
+      factionId: string | null;
+      hp: number;
+      maxHp: number;
+      isPlayerUnit: boolean;
+    }
+  | {
+      kind: 'site';
+      id: string;
+      cityId: string;
+      name: string;
+      owner: string | null;
+      isPlayerOwned: boolean;
+    }
+  | null;
+
+export type GameUiState = {
+  phase: GamePhase;
+  /** null in the lobby. */
+  playerFactionId: string | null;
+  /**
+   * Scenario faction order. In the lobby these are scenario-derived
+   * (`cityCount` = declared cities, `resources` = starting stock, no units).
+   */
+  factions: FactionStatus[];
+  totalSites: number;
+  trainCost: number;
+  /** phase 'playing' && the selection is an owned site && player can afford it. */
+  canTrain: boolean;
+  selection: GameSelection;
+  /** Bumped (new object, seq+1) on every successful move command — the UI renders a ground ping. World coords. */
+  lastCommand: { x: number; z: number; seq: number } | null;
+  /** Monotonic; bumped whenever any of the above changed. */
+  version: number;
+};
+
+export type CityLabel = {
+  cityId: string;
+  name: string;
+  /** Owner's scenario color, or the neutral grey when the owner is not a scenario faction. */
+  ownerColor: string;
+  x: number;
+  y: number;
+  /** On-screen and in front of the camera. */
+  visible: boolean;
+};
+
+export type GameController = {
+  scenario: Scenario;
+  /** Stable snapshot reference until `version` bumps. */
+  getState(): GameUiState;
+  /** Called (sync or next frame) after `version` bumps; NOT every frame. */
+  subscribe(cb: () => void): () => void;
+  /** Fresh screen-space projections of the scenario's cities. Call from the UI's own rAF; do not cache. */
+  getCityLabels(): CityLabel[];
+  /**
+   * lobby → playing. Creates sim + view + AIs, spawns starting units, focuses
+   * the camera on the scenario region. No-op unless the phase is 'lobby' and
+   * the id names a scenario faction.
+   */
+  start(playerFactionId: string): void;
+  /** `trainUnit` at the selected own site. False (no state change) when `canTrain` is false. */
+  train(): boolean;
+  clearSelection(): void;
   dispose(): void;
 };
 
-/**
- * The HUD's placement has to dodge every zone `@map-engine/ui`'s `AtlasUI`
- * occupies (all absolutely positioned in the same stacking context, so simple
- * z-index alone cannot rescue an overlapping rect): the always-mountable left
- * side panel (`.atlas-side`, x 14–314, full height, z 20/27 mobile), the top
- * search bar (z 30), the top-right toolbar (z 26), the bottom-right minimap +
- * HUD (z 20, minimap hidden <900px), and the bottom-center hints bar (z 15,
- * hidden <900px). Above 900px this sits in the gap between the hints bar and
- * the minimap/toolbar column. Below 900px the side panel starts *closed*
- * (`AtlasUI` calls `setPanelOpen(false)` on boot when `innerWidth < 900`), the
- * hints bar and minimap are hidden outright, and the bottom-right column is
- * just the FPS badge + compass (`.atlas-hud`, ~40px wide) — leaving the whole
- * bottom-left corner free, so this sits there instead, at the same 14px inset
- * the side panel itself uses. Its z-index still clears the side panel's mobile
- * z 27 (the HUD has its own background) so if the user manually reopens the
- * panel the HUD stays readable on top rather than being buried under it.
- * Verified against real rendered rects at 1440x900, 1920x1080 and 390x844 —
- * see e2e/game.spec.ts.
- */
-const HUD_STYLE = `
-.game-hud-panel {
-  position: absolute;
-  right: 196px;
-  bottom: 10px;
-  padding: 6px 10px;
-  font: 12px/1.6 "SF Mono", ui-monospace, Menlo, monospace;
-  color: #e8edf5;
-  background: rgba(10, 14, 20, 0.55);
-  border-radius: 6px;
-  white-space: pre;
-  pointer-events: none;
-  z-index: 18;
-  max-width: 220px;
-}
-@media (max-width: 900px) {
-  .game-hud-panel {
-    left: 14px;
-    right: auto;
-    bottom: 14px;
-    top: auto;
-    max-width: 170px;
-    z-index: 28;
-  }
-}
-`;
+/** Site/label color when the owner is not one of the scenario's factions. */
+const NEUTRAL_COLOR = '#9aa0a6';
 
-const FACTION_COLORS: Record<string, string> = { red: '#c0392b', blue: '#2d7dd2' };
+/** Historical worlds' ids: `hist:{dataset}` / `hist:{dataset}:{era}`. */
+const HISTORICAL_ID_PREFIX = 'hist:';
 
-/** Historical worlds' city-hall building ids all start with this prefix. */
-const CITY_ID_PREFIX = 'city:';
-/** The district id `historicalToWorld` assigns to a city with no faction. */
-const NEUTRAL_DISTRICT_ID = 'd:hist';
+/** Camera framing of the whole scenario region — see step 7 of `start`. */
+const FOCUS_RADIUS_SCALE = 1.4;
+const FOCUS_RADIUS_PADDING = 40;
+
+/** One scenario city resolved against the loaded world. */
+type CityEntry = {
+  cityId: string;
+  /** Building id = site id. */
+  buildingId: string;
+  /** The building's display name — carries the era's name overrides (e.g. 鄂). */
+  name: string;
+  position: Vec3;
+  /** The faction that owns it at scenario start. */
+  initialOwner: string;
+};
+
+/** The internal, minimal selection; the public `GameSelection` is derived from live sim state. */
+type SelectionRef = { kind: 'unit'; id: UnitId } | { kind: 'site'; id: string } | null;
 
 /**
- * Sites for a historical world (buildings whose id starts with `'city:'`):
- * one per city, owner derived from its district id (`'d:hist'` = neutral).
- * Returns `null` when the world has no such buildings, so the caller falls
- * back to the procedural/OSM three-site layout.
+ * True when this URL asks for the game on a historical map — the App uses it to
+ * swap `AtlasUI` for the game UI. Deliberately independent of `setupGameDemo`'s
+ * own gate (which inspects the loaded world) so the UI can decide before the
+ * world has finished booting.
  */
-function deriveHistoricalSites(world: MapWorld): SiteDefinition[] | null {
-  const isCityHall = (o: MapObject): o is Extract<MapObject, { objectType: 'building' }> =>
-    o.objectType === 'building' && o.id.startsWith(CITY_ID_PREFIX);
-  const cityHalls = Object.values(world.objects).filter(isCityHall);
-  if (cityHalls.length === 0) return null;
-
-  return cityHalls.map((obj) => {
-    const building: BuildingInfo = obj.building;
-    const ownerFactionId =
-      building.districtId === NEUTRAL_DISTRICT_ID
-        ? undefined
-        : building.districtId.replace(/^d:/, '');
-    return {
-      id: building.id,
-      position: { x: building.position.x, y: building.position.z },
-      ...(ownerFactionId !== undefined ? { ownerFactionId } : {}),
-      captureRadius: 6,
-      captureTime: 3,
-      income: 5,
-    };
-  });
+export function isGameModeUrl(params: URLSearchParams): boolean {
+  return params.get('game') === '1' && params.get('map') === 'three-kingdoms';
 }
 
 /**
- * Sites for a procedural/OSM world: `site:red` at the BFS start node,
- * `site:blue` at the farthest spawn pick, and `site:neutral` at the reachable
- * node nearest the start that lies farther than `captureRadius` from every
- * spawn pick (so taking it requires actually marching a unit there) — falling
- * back to the nearest reachable node that isn't a spawn pick, for a graph too
- * small to have a clean far-away candidate.
+ * Resolve the scenario's cities against the loaded world. A city whose building
+ * is missing is skipped with a warning rather than throwing — a scenario must
+ * never be able to break the map.
  */
-function deriveProceduralSites(
-  index: RoadGraphIndex,
-  startNode: string,
-  chosenNodeIds: string[],
-  remainder: string[],
-): SiteDefinition[] {
-  const captureRadius = 10;
-  const posOf = (id: string): Vec3 | undefined => index.nodeById.get(id);
-  const startPos = posOf(startNode) ?? { x: 0, y: 0, z: 0 };
-
-  // Farthest of the actual spawn picks from the start node.
-  let blueNodeId = chosenNodeIds[0]!;
-  let blueBestD = -Infinity;
-  for (const id of chosenNodeIds) {
-    const p = posOf(id);
-    if (!p) continue;
-    const d = (p.x - startPos.x) ** 2 + (p.z - startPos.z) ** 2;
-    if (d > blueBestD) {
-      blueBestD = d;
-      blueNodeId = id;
+function resolveCities(scenario: Scenario, world: MapWorld): CityEntry[] {
+  const entries: CityEntry[] = [];
+  for (const faction of scenario.factions) {
+    for (const cityId of faction.cities) {
+      const buildingId = scenarioBuildingId(scenario, cityId);
+      const obj = world.objects[buildingId];
+      if (!obj || obj.objectType !== 'building') {
+        console.warn(
+          `[game] scenario "${scenario.id}": no building "${buildingId}" in world "${world.id}" — city skipped`,
+        );
+        continue;
+      }
+      const building = obj.building;
+      entries.push({
+        cityId,
+        buildingId,
+        name: building.name,
+        position: { ...building.position },
+        initialOwner: faction.id,
+      });
     }
   }
-  const bluePos = posOf(blueNodeId) ?? startPos;
-
-  const fartherThanEveryPick = (id: string): boolean => {
-    const p = posOf(id);
-    if (!p) return false;
-    return chosenNodeIds.every((pickId) => {
-      const pickPos = posOf(pickId);
-      return !pickPos || Math.hypot(p.x - pickPos.x, p.z - pickPos.z) > captureRadius;
-    });
-  };
-  // remainder is already sorted nearest→farthest from the start node.
-  let neutralNodeId: string | undefined =
-    remainder.find(fartherThanEveryPick) ?? remainder.find((id) => !chosenNodeIds.includes(id));
-  // Last-resort safety net for a pathologically tiny graph where every
-  // reachable node besides the start is already a spawn pick.
-  neutralNodeId ??= remainder[remainder.length - 1];
-  const neutralPos = (neutralNodeId !== undefined ? posOf(neutralNodeId) : undefined) ?? startPos;
-
-  return [
-    {
-      id: 'site:red',
-      position: { x: startPos.x, y: startPos.z },
-      ownerFactionId: 'red',
-      captureRadius,
-      captureTime: 3,
-      income: 5,
-    },
-    {
-      id: 'site:blue',
-      position: { x: bluePos.x, y: bluePos.z },
-      ownerFactionId: 'blue',
-      captureRadius,
-      captureTime: 3,
-      income: 5,
-    },
-    {
-      id: 'site:neutral',
-      position: { x: neutralPos.x, y: neutralPos.z },
-      captureRadius,
-      captureTime: 3,
-      income: 5,
-    },
-  ];
+  return entries;
 }
-
-const DEMO_FACTIONS: FactionDefinition[] = [
-  { id: 'red', resources: 0, income: 1 },
-  { id: 'blue', resources: 60, income: 1 },
-];
 
 export function setupGameDemo(
   renderer: ThreeMapRenderer,
   world: MapWorld,
   params: URLSearchParams,
-): GameDemoHandles | null {
+): GameController | null {
+  // The game layer exists only on the historical maps. Procedural/OSM worlds
+  // get nothing at all, not even a lobby.
   if (params.get('game') !== '1') return null;
+  if (!world.id.startsWith(HISTORICAL_ID_PREFIX)) return null;
 
-  const index = buildGraphIndex(world.roadGraph);
-  const startNode = nearestNode(index, 0, 0);
-  if (!startNode) return null;
+  const scenario = JINGZHOU_219;
+  const cities = resolveCities(scenario, world);
+  const cityById = new Map(cities.map((c) => [c.buildingId, c]));
+  const colorOf = new Map(scenario.factions.map((f) => [f.id, f.color]));
 
-  // BFS over the road graph from the world-center node to find every node it
-  // can reach — units are only spawned within this connected component so
-  // every unit can always route to every other.
-  const reachable = new Set<string>([startNode]);
-  const queue: string[] = [startNode];
-  while (queue.length > 0) {
-    const cur = queue.shift() as string;
-    for (const edge of index.adjacency.get(cur) ?? []) {
-      if (!reachable.has(edge.to)) {
-        reachable.add(edge.to);
-        queue.push(edge.to);
+  // --- Mutable controller state ------------------------------------------------
+  let disposed = false;
+  let phase: GamePhase = 'lobby';
+  let playerFactionId: string | null = null;
+  let sim: GameSimulation | null = null;
+  let view: GameView | null = null;
+  let ais: AiController[] = [];
+  let selectionRef: SelectionRef = null;
+  let lastCommand: { x: number; z: number; seq: number } | null = null;
+
+  const subscribers = new Set<() => void>();
+  const teardown: Array<() => void> = [];
+
+  // --- Snapshot ----------------------------------------------------------------
+
+  const lobbyFactions = (): FactionStatus[] =>
+    scenario.factions.map((f) => ({
+      id: f.id,
+      name: f.name,
+      color: f.color,
+      cityCount: f.cities.length,
+      resources: Math.round(f.resources),
+      unitCount: 0,
+      isPlayer: false,
+    }));
+
+  const liveFactions = (s: GameSimulation): FactionStatus[] => {
+    const sites = s.listSites();
+    const units = s.listUnits();
+    return scenario.factions.map((f) => ({
+      id: f.id,
+      name: f.name,
+      color: f.color,
+      cityCount: sites.filter((site) => site.ownerFactionId === f.id).length,
+      resources: Math.round(s.getFaction(f.id)?.resources ?? 0),
+      unitCount: units.filter((u) => u.factionId === f.id).length,
+      isPlayer: f.id === playerFactionId,
+    }));
+  };
+
+  /**
+   * Resolve `selectionRef` against live simulation state, dropping a selection
+   * whose subject no longer exists (a selected unit can die at any tick; sites
+   * never disappear).
+   */
+  const resolveSelection = (): GameSelection => {
+    if (!sim || !selectionRef) return null;
+    if (selectionRef.kind === 'unit') {
+      const unit = sim.getUnit(selectionRef.id);
+      if (!unit) {
+        selectionRef = null;
+        view?.selectUnit(null);
+        return null;
+      }
+      return {
+        kind: 'unit',
+        id: unit.id,
+        factionId: unit.factionId,
+        hp: unit.hp,
+        maxHp: unit.maxHp,
+        isPlayerUnit: unit.factionId !== null && unit.factionId === playerFactionId,
+      };
+    }
+    const site = sim.getSite(selectionRef.id);
+    if (!site) {
+      selectionRef = null;
+      return null;
+    }
+    const city = cityById.get(site.id);
+    return {
+      kind: 'site',
+      id: site.id,
+      cityId: city?.cityId ?? site.id,
+      name: site.name,
+      owner: site.ownerFactionId,
+      isPlayerOwned: site.ownerFactionId !== null && site.ownerFactionId === playerFactionId,
+    };
+  };
+
+  const buildState = (version: number): GameUiState => {
+    const factions = sim ? liveFactions(sim) : lobbyFactions();
+    const selection = resolveSelection();
+    const player = playerFactionId;
+    const canTrain =
+      phase === 'playing' &&
+      player !== null &&
+      selection !== null &&
+      selection.kind === 'site' &&
+      selection.isPlayerOwned &&
+      (factions.find((f) => f.id === player)?.resources ?? 0) >= scenario.trainCost;
+    return {
+      phase,
+      playerFactionId: player,
+      factions,
+      totalSites: cities.length,
+      trainCost: scenario.trainCost,
+      canTrain,
+      selection,
+      lastCommand,
+      version,
+    };
+  };
+
+  /**
+   * Everything the UI can observe, flattened into one comparable string. The
+   * post-tick frame hook recomputes it every frame but only replaces the
+   * snapshot (and notifies) when it actually moved — subscribers must not be
+   * woken 60 times a second for a game whose numbers change about once.
+   */
+  const fingerprint = (s: GameUiState): string => {
+    const f = s.factions
+      .map((x) => `${x.id}:${x.cityCount}:${x.resources}:${x.unitCount}:${x.isPlayer ? 1 : 0}`)
+      .join(',');
+    const sel = s.selection
+      ? s.selection.kind === 'unit'
+        ? `u:${s.selection.id}:${Math.round(s.selection.hp)}:${s.selection.maxHp}:${s.selection.isPlayerUnit ? 1 : 0}`
+        : `s:${s.selection.id}:${s.selection.owner ?? '-'}:${s.selection.isPlayerOwned ? 1 : 0}`
+      : '-';
+    return `${s.phase}|${s.playerFactionId ?? '-'}|${f}|${sel}|${s.canTrain ? 1 : 0}|${s.lastCommand?.seq ?? 0}`;
+  };
+
+  let state = buildState(0);
+  let lastFingerprint = fingerprint(state);
+
+  const refresh = (): void => {
+    const next = buildState(state.version + 1);
+    const fp = fingerprint(next);
+    if (fp === lastFingerprint) return;
+    lastFingerprint = fp;
+    state = next;
+    for (const cb of [...subscribers]) cb();
+  };
+
+  // --- start() -----------------------------------------------------------------
+
+  const start = (factionId: string): void => {
+    if (disposed || phase !== 'lobby') return;
+    if (!scenario.factions.some((f) => f.id === factionId)) return;
+
+    // 1. Sites — the scenario's cities only, never the world's other ~43.
+    const sites: SiteDefinition[] = cities.map((c) => ({
+      id: c.buildingId,
+      name: c.name,
+      position: { x: c.position.x, y: c.position.z },
+      ownerFactionId: c.initialOwner,
+      ...scenario.siteDefaults,
+    }));
+
+    // 2. Simulation.
+    const factions: FactionDefinition[] = scenario.factions.map((f) => ({
+      id: f.id,
+      resources: f.resources,
+      income: f.income,
+    }));
+    const simulation = createGameSimulation(world, { sites, factions });
+    sim = simulation;
+    playerFactionId = factionId;
+    phase = 'playing';
+
+    // 3. Starting units, in scenario faction order then city order, at the road
+    // node nearest each owned city (falling back to the raw city position for a
+    // world with no road graph at all).
+    for (const faction of scenario.factions) {
+      for (const cityId of faction.cities) {
+        const city = cities.find((c) => c.cityId === cityId);
+        if (!city) continue;
+        const node = nearestNode(simulation.index, city.position.x, city.position.z);
+        for (let i = 0; i < faction.unitsPerCity; i++) {
+          simulation.spawnUnit({
+            ...scenario.unitStats,
+            kind: 'soldier',
+            factionId: faction.id,
+            ...(node !== null
+              ? { atNode: node }
+              : { position: { x: city.position.x, y: city.position.z } }),
+          });
+        }
       }
     }
-  }
-  const startPos = index.nodeById.get(startNode);
-  const remainder = [...reachable]
-    .filter((id) => id !== startNode)
-    .sort((a, b) => {
-      const pa = index.nodeById.get(a);
-      const pb = index.nodeById.get(b);
-      const da = pa && startPos ? (pa.x - startPos.x) ** 2 + (pa.z - startPos.z) ** 2 : 0;
-      const db = pb && startPos ? (pb.x - startPos.x) ** 2 + (pb.z - startPos.z) ** 2 : 0;
-      return da - db;
+
+    // 4. AI frame hook — registered BEFORE createGameView below, so it runs
+    // before the view's own onFrame hook, which is the one that calls
+    // `sim.tick(dt)`. renderer.onFrame stores callbacks in a Set and the frame
+    // loop iterates it in registration order, so this ordering is guaranteed,
+    // giving the AI's commands a chance to take effect in the same tick they
+    // were issued. Once the game has ended the AIs stop deciding, while the
+    // simulation keeps ticking so the world stays alive behind the overlay.
+    ais = scenario.factions
+      .filter((f) => f.id !== factionId)
+      .map((f) =>
+        createAiController(simulation, {
+          factionId: f.id,
+          train: { cost: scenario.trainCost, unit: { ...scenario.unitStats, kind: 'soldier' } },
+        }),
+      );
+    const offAiFrame = renderer.onFrame((dt) => {
+      if (phase !== 'playing') return;
+      for (const ai of ais) ai.update(dt);
     });
-  // Pick up to 6 well-separated nodes: the start node plus up to 5 more
-  // spread evenly across the nearest→farthest ordering of the rest of the
-  // component, so routes between units are visibly long.
-  const extraSlots = Math.min(5, remainder.length);
-  const picks: (string | undefined)[] = [startNode];
-  for (let i = 0; i < extraSlots; i++) {
-    const idx = extraSlots === 1 ? 0 : Math.round((i * (remainder.length - 1)) / (extraSlots - 1));
-    picks.push(remainder[idx]);
-  }
-  const chosenNodeIds = [...new Set(picks)].filter((id): id is string => !!id);
+    teardown.push(offAiFrame);
 
-  if (chosenNodeIds.length < 2) return null;
+    // 5. View (its own onFrame hook ticks the simulation).
+    const gameView = createGameView(renderer, simulation, {
+      factionColors: Object.fromEntries(colorOf),
+      healthBars: true,
+    });
+    view = gameView;
+    teardown.push(() => gameView.dispose());
 
-  const sites = deriveHistoricalSites(world) ?? deriveProceduralSites(index, startNode, chosenNodeIds, remainder);
+    // 6. Post-tick bookkeeping — registered AFTER createGameView, so it observes
+    // the state the tick just produced.
+    const offSyncFrame = renderer.onFrame(() => {
+      endCheck();
+      refresh();
+    });
+    teardown.push(offSyncFrame);
 
-  const sim = createGameSimulation(world, { sites, factions: DEMO_FACTIONS });
+    // Interaction.
+    renderer.domElement.addEventListener('click', onClick);
+    renderer.domElement.addEventListener('contextmenu', onContextMenu);
+    window.addEventListener('keydown', onKeyDown);
+    teardown.push(() => {
+      renderer.domElement.removeEventListener('click', onClick);
+      renderer.domElement.removeEventListener('contextmenu', onContextMenu);
+      window.removeEventListener('keydown', onKeyDown);
+    });
 
-  // FROZEN invariant: the first two spawned units (insertion order) must
-  // share a faction — e2e commands unit 0 onto unit 1 and expects it to
-  // arrive rather than start fighting. Assigning the first 3 picks to 'red'
-  // and the rest to 'blue' preserves this even when the graph yields fewer
-  // than 6 nodes.
-  chosenNodeIds.forEach((nodeId, i) =>
-    sim.spawnUnit({
-      atNode: nodeId,
-      kind: 'soldier',
-      speed: 30,
-      factionId: i < 3 ? 'red' : 'blue',
-    }),
-  );
-
-  const ais: AiController[] = [];
-  if (params.get('ai') === '1') {
-    ais.push(createAiController(sim, { factionId: 'blue', train: { cost: 50 } }));
-  }
-
-  const hudStyle = document.createElement('style');
-  hudStyle.textContent = HUD_STYLE;
-  document.head.appendChild(hudStyle);
-
-  const hud = document.createElement('div');
-  hud.dataset.testid = 'game-hud';
-  hud.className = 'game-hud-panel';
-  (renderer.domElement.parentElement ?? document.body).appendChild(hud);
-
-  // Only touch the DOM when the rendered string actually changed — the HUD's
-  // content changes about once a second, but this runs every frame.
-  let lastHudText: string | undefined;
-  const refreshHud = (): void => {
-    const sitesNow = sim.listSites();
-    const text = sim
-      .listFactions()
-      .map((f) => {
-        const owned = sitesNow.filter((s) => s.ownerFactionId === f.id).length;
-        return `${f.id}: ${Math.round(f.resources)} res · ${owned} site${owned === 1 ? '' : 's'}`;
-      })
-      .join('\n');
-    if (text !== lastHudText) {
-      hud.textContent = text;
-      lastHudText = text;
+    // e2e and manual debugging reach the live objects through `__mapEngine`;
+    // this is the only place that knows they now exist.
+    const me = (window as unknown as Record<string, unknown>).__mapEngine as
+      | Record<string, unknown>
+      | undefined;
+    if (me) {
+      me.game = simulation;
+      me.gameView = gameView;
+      me.gameAis = ais;
     }
+    teardown.push(() => {
+      if (!me) return;
+      // Only retract our own references — a controller created after us (React
+      // StrictMode remount) may already have replaced them.
+      if (me.game === simulation) delete me.game;
+      if (me.gameView === gameView) delete me.gameView;
+      if (me.gameAis === ais) delete me.gameAis;
+    });
+
+    // 7. Frame the whole scenario region.
+    if (cities.length > 0) {
+      const cx = cities.reduce((sum, c) => sum + c.position.x, 0) / cities.length;
+      const cz = cities.reduce((sum, c) => sum + c.position.z, 0) / cities.length;
+      const spread = cities.reduce(
+        (max, c) => Math.max(max, Math.hypot(c.position.x - cx, c.position.z - cz)),
+        0,
+      );
+      void renderer.focusPoint({ x: cx, z: cz }, spread * FOCUS_RADIUS_SCALE + FOCUS_RADIUS_PADDING);
+    }
+
+    refresh();
   };
-  refreshHud();
 
-  // AI frame hook — registered BEFORE createGameView below, so its callback
-  // (which also drives the cheap HUD refresh) runs before the view's own
-  // onFrame hook, which is the one that calls `sim.tick(dt)`. renderer.onFrame
-  // stores callbacks in a Set and the frame loop iterates it in registration
-  // order, so this ordering is guaranteed, giving the AI's commands a chance
-  // to take effect in the same tick they were issued.
-  const offAiFrame = renderer.onFrame((dt) => {
-    for (const ai of ais) ai.update(dt);
-    refreshHud();
-  });
-
-  const view = createGameView(renderer, sim, { factionColors: FACTION_COLORS });
-
-  const onGameClick = (e: MouseEvent): void => {
-    const pointer = { x: e.clientX, y: e.clientY };
-    const hitUnit = view.pickUnit(pointer);
-    if (hitUnit) {
-      view.selectUnit(hitUnit);
+  /**
+   * Victory when the player holds every scenario site; defeat when it holds no
+   * site and no unit. Both are terminal — once set, the phase never changes
+   * again (the early return also freezes the AI hook above).
+   */
+  function endCheck(): void {
+    if (phase !== 'playing' || !sim || playerFactionId === null) return;
+    const owned = sim.listSites().filter((s) => s.ownerFactionId === playerFactionId).length;
+    if (owned === cities.length && cities.length > 0) {
+      phase = 'won';
       return;
     }
-    const selected = view.getSelectedUnit();
-    if (!selected) return;
+    if (owned === 0 && sim.listUnits().every((u) => u.factionId !== playerFactionId)) {
+      phase = 'lost';
+    }
+  }
+
+  // --- Input -------------------------------------------------------------------
+
+  function selectUnit(id: UnitId): void {
+    selectionRef = { kind: 'unit', id };
+    view?.selectUnit(id);
+  }
+
+  function selectSite(id: string): void {
+    selectionRef = { kind: 'site', id };
+    // A site selection is not a unit selection: drop the view's unit ring.
+    view?.selectUnit(null);
+  }
+
+  function clearSelection(): void {
+    selectionRef = null;
+    view?.selectUnit(null);
+    refresh();
+  }
+
+  function onClick(e: MouseEvent): void {
+    if (!sim || !view) return;
+    const pointer = { x: e.clientX, y: e.clientY };
+
+    const hitUnit = view.pickUnit(pointer);
+    if (hitUnit !== null) {
+      selectUnit(hitUnit);
+      refresh();
+      return;
+    }
+    const hitSite = view.pickSite(pointer);
+    if (hitSite !== null) {
+      selectSite(hitSite);
+      refresh();
+      return;
+    }
+
+    // Empty ground: a move order, but only for the player's own units — an
+    // enemy unit or a site selection never commands anything.
+    if (!selectionRef || selectionRef.kind !== 'unit') return;
+    const unit = sim.getUnit(selectionRef.id);
+    if (!unit || unit.factionId === null || unit.factionId !== playerFactionId) return;
     const point = renderer.pickGround(pointer);
-    if (point) sim.moveUnitTo(selected, { x: point.x, y: point.z });
-  };
-  renderer.domElement.addEventListener('click', onGameClick);
+    if (!point) return;
+    if (!sim.moveUnitTo(unit.id, { x: point.x, y: point.z })) return;
+    lastCommand = { x: point.x, z: point.z, seq: (lastCommand?.seq ?? 0) + 1 };
+    refresh();
+  }
+
+  function onContextMenu(e: MouseEvent): void {
+    e.preventDefault();
+    clearSelection();
+  }
+
+  function onKeyDown(e: KeyboardEvent): void {
+    if (e.key === 'Escape' || e.code === 'Escape') clearSelection();
+  }
+
+  // --- Public surface ----------------------------------------------------------
 
   return {
-    sim,
-    view,
-    ais,
+    scenario,
+
+    getState: () => state,
+
+    subscribe(cb: () => void): () => void {
+      subscribers.add(cb);
+      return () => subscribers.delete(cb);
+    },
+
+    getCityLabels(): CityLabel[] {
+      return cities.map((c) => {
+        const owner = sim?.getSite(c.buildingId)?.ownerFactionId ?? c.initialOwner;
+        const p = renderer.projectToScreen(c.position);
+        return {
+          cityId: c.cityId,
+          name: c.name,
+          ownerColor: (owner !== null ? colorOf.get(owner) : undefined) ?? NEUTRAL_COLOR,
+          x: p.x,
+          y: p.y,
+          visible: p.visible,
+        };
+      });
+    },
+
+    start,
+
+    train(): boolean {
+      if (!state.canTrain || !sim || playerFactionId === null) return false;
+      if (!selectionRef || selectionRef.kind !== 'site') return false;
+      const unit = sim.trainUnit(playerFactionId, {
+        siteId: selectionRef.id,
+        cost: scenario.trainCost,
+        unit: { ...scenario.unitStats, kind: 'soldier' },
+      });
+      refresh();
+      return unit !== null;
+    },
+
+    clearSelection,
+
     dispose(): void {
-      renderer.domElement.removeEventListener('click', onGameClick);
-      offAiFrame();
-      hud.remove();
-      hudStyle.remove();
-      view.dispose();
+      if (disposed) return;
+      disposed = true;
+      // Reverse order: listeners and frame hooks before the view they read.
+      for (const off of teardown.splice(0).reverse()) off();
+      subscribers.clear();
+      ais = [];
+      view = null;
+      sim = null;
     },
   };
 }

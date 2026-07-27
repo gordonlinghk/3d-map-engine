@@ -1,410 +1,301 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
 
-test('game: click-to-move unit reaches target and camera follow tracks it', async ({ page }) => {
+const HILL_PNG = readFileSync(fileURLToPath(new URL('./fixtures/terrarium-hill.png', import.meta.url)));
+
+/**
+ * C9 replaced the old procedural `?game=1` sandbox with a scenario-driven
+ * Three Kingdoms battle (`JINGZHOU_219`, see `demo/src/game/scenario.ts`):
+ * `?game=1` only does anything on `?map=three-kingdoms` (`isGameModeUrl`).
+ * Every test below routes real elevation tiles to a flat fixture, exactly like
+ * `historical.spec.ts`, so booting the historical map never hits the network.
+ */
+const routeFlatElevation = (page: import('@playwright/test').Page) =>
+  page.route('**/elevation-tiles-prod/**', (route) =>
+    route.fulfill({ body: HILL_PNG, contentType: 'image/png' }),
+  );
+
+test('game: ?game=1 is fully inert on the procedural map (no map= param)', async ({ page }) => {
+  await routeFlatElevation(page);
   await page.goto('/?game=1');
 
-  // Wait for the opt-in game sim to boot with at least two spawned units.
+  // The procedural world still boots normally — wait for it, exactly like the
+  // non-game smoke tests do.
   await page.waitForFunction(
-    () =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      !!(window as any).__mapEngine?.game &&
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).__mapEngine.game.listUnits().length >= 2,
+    () => !!(window as unknown as { __mapEngine?: { world?: unknown } }).__mapEngine?.world,
     undefined,
-    { timeout: 15_000 },
+    { timeout: 30_000 },
   );
 
-  const [unitA, unitB] = await page.evaluate(() => {
+  // Mobile defaults the side panel to collapsed; open it so `.atlas-side`
+  // actually mounts, same as historical.spec.ts's established pattern.
+  if (await page.getByTestId('side-open').isVisible()) {
+    await page.getByTestId('side-open').click();
+  }
+  await expect(page.locator('.atlas-side')).toHaveCount(1);
+
+  await expect(page.locator('[data-testid^="game-"]')).toHaveCount(0);
+
+  const flags = await page.evaluate(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const units = (window as any).__mapEngine.game.listUnits();
-    return [
-      { id: units[0].id, position: { ...units[0].position } },
-      { id: units[1].id, position: { ...units[1].position } },
-    ];
+    const me = (window as any).__mapEngine;
+    return {
+      gameController: me.gameController,
+      game: me.game,
+      gameView: me.gameView,
+      gameAis: me.gameAis,
+    };
   });
-  const aId = unitA!.id as string;
-  const aStartPos = unitA!.position as { x: number; y: number; z: number };
-  const bPos = unitB!.position as { x: number; y: number; z: number };
+  expect(flags.gameController).toBeUndefined();
+  expect(flags.game).toBeUndefined();
+  expect(flags.gameView).toBeUndefined();
+  expect(flags.gameAis).toBeUndefined();
+});
 
-  // Command unit A to move to unit B's position; the sim's Vec2 is {x, y}
-  // where y maps to world z.
-  const started = await page.evaluate(
-    ([aId, b]) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (window as any).__mapEngine.game.moveUnitTo(aId, { x: b.x, y: b.z });
-    },
-    [aId, bPos] as const,
-  );
-  expect(started).toBe(true);
+test('game: lobby shows scenario-derived preview stats and replaces AtlasUI entirely', async ({
+  page,
+}) => {
+  await routeFlatElevation(page);
+  await page.goto('/?map=three-kingdoms&era=y219&game=1');
+
+  await expect(page.getByTestId('game-lobby')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-testid^="game-faction-card-"]')).toHaveCount(3);
+
+  // 劉備: 3 cities (jiangling/yiling/shangyong) × unitsPerCity 1 = 3.
+  const liubeiCard = page.getByTestId('game-faction-card-liubei');
+  await expect(liubeiCard).toContainText('起始城池數 3');
+  await expect(liubeiCard).toContainText('兵力 3');
+
+  // 曹操: 2 cities (wan/xiangyang) × unitsPerCity 1 = 2.
+  const caocaoCard = page.getByTestId('game-faction-card-caocao');
+  await expect(caocaoCard).toContainText('起始城池數 2');
+  await expect(caocaoCard).toContainText('兵力 2');
+
+  // GameUI replaces AtlasUI wholesale in game mode — none of its chrome mounts.
+  await expect(page.locator('.atlas-side')).toHaveCount(0);
+  await expect(page.locator('.atlas-search')).toHaveCount(0);
+  await expect(page.locator('.atlas-toolbar')).toHaveCount(0);
+
+  const snapshot = await page.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const me = (window as any).__mapEngine;
+    return {
+      phase: me.gameController?.getState().phase,
+      game: me.game,
+    };
+  });
+  expect(snapshot.phase).toBe('lobby');
+  expect(snapshot.game).toBeUndefined();
+});
+
+test('game: starting as 劉備 spawns the scenario and training a unit at an owned city works', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await routeFlatElevation(page);
+  await page.goto('/?map=three-kingdoms&era=y219&game=1');
+
+  await expect(page.getByTestId('game-lobby')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('game-faction-card-liubei').locator('button').click();
 
   await expect
     .poll(
       async () =>
-        page.evaluate((id) => {
+        page.evaluate(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const u = (window as any).__mapEngine.game.getUnit(id);
-          return u ? u.state : null;
-        }, aId),
+          () => (window as any).__mapEngine.gameController.getState().phase,
+        ),
       { timeout: 30_000 },
     )
-    .toBe('arrived');
+    .toBe('playing');
 
-  const finalPos = await page.evaluate((id) => {
+  // One snapshot: 8 sites with the exact expected owner map, 8 units split
+  // 2 (caocao) / 3 (liubei) / 3 (sun), the two AI factions, the topbar and all
+  // 8 city labels.
+  const snapshot = await page.evaluate(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const u = (window as any).__mapEngine.game.getUnit(id);
-    return { x: u.position.x, z: u.position.z };
-  }, aId);
-  const dx = finalPos.x - bPos.x;
-  const dz = finalPos.z - bPos.z;
-  expect(Math.hypot(dx, dz)).toBeLessThan(5);
-
-  // Camera follow: recording the start position, then following unit A while
-  // it's commanded to move again should visibly move the camera.
-  const startCamera = await page.evaluate(() => {
+    const me = (window as any).__mapEngine;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cam = (window as any).__mapEngine.renderer.camera;
-    return { x: cam.position.x, y: cam.position.y, z: cam.position.z };
+    const sites = (me.game.listSites() as any[]).map((s) => ({ id: s.id, owner: s.ownerFactionId }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const units = me.game.listUnits() as any[];
+    const byFaction: Record<string, number> = {};
+    for (const u of units) byFaction[u.factionId] = (byFaction[u.factionId] ?? 0) + 1;
+    return {
+      sites,
+      unitCount: units.length,
+      byFaction,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      aiFactionIds: ((me.gameAis ?? []) as any[]).map((a) => a.factionId).sort(),
+      cityLabelCount: document.querySelectorAll('[data-testid^="game-city-label-"]').length,
+    };
   });
 
-  await page.evaluate(
-    ([aId, start]) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const me = (window as any).__mapEngine;
-      me.gameView.followUnit(aId);
-      // Send unit A back toward its own starting point — a third reachable
-      // location distinct from where it's currently standing (unit B's
-      // position) — so it has a real route to travel while followed.
-      me.game.moveUnitTo(aId, { x: start.x, y: start.z });
-    },
-    [aId, aStartPos] as const,
-  );
+  expect(snapshot.sites).toHaveLength(8);
+  const owners = Object.fromEntries(snapshot.sites.map((s) => [s.id, s.owner]));
+  expect(owners).toEqual({
+    'city:three-kingdoms:wan': 'caocao',
+    'city:three-kingdoms:xiangyang': 'caocao',
+    'city:three-kingdoms:jiangling': 'liubei',
+    'city:three-kingdoms:yiling': 'liubei',
+    'city:three-kingdoms:shangyong': 'liubei',
+    'city:three-kingdoms:changsha': 'sun',
+    'city:three-kingdoms:chibi': 'sun',
+    'city:three-kingdoms:wuchang': 'sun',
+  });
+  expect(snapshot.unitCount).toBe(8);
+  expect(snapshot.byFaction).toEqual({ caocao: 2, liubei: 3, sun: 3 });
+  expect(snapshot.aiFactionIds).toEqual(['caocao', 'sun']);
+  expect(snapshot.cityLabelCount).toBe(8);
+  await expect(page.getByTestId('game-topbar')).toBeVisible();
 
+  // Select the player's own city (jiangling) by clicking its screen-projected
+  // label position. The camera is still settling from `start()`'s focusPoint
+  // fly-in, so retry the click inside the poll until it actually resolves to
+  // the site selection (rather than missing, or landing on nothing useful).
   await expect
     .poll(
       async () => {
-        const cam = await page.evaluate(() => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const c = (window as any).__mapEngine.renderer.camera;
-          return { x: c.position.x, y: c.position.y, z: c.position.z };
-        });
-        return Math.hypot(
-          cam.x - startCamera.x,
-          cam.y - startCamera.y,
-          cam.z - startCamera.z,
-        );
-      },
-      { timeout: 30_000 },
-    )
-    .toBeGreaterThan(5);
-});
-
-// Shared boot wait: the opt-in game sim has spawned at least two units.
-const waitForGameBoot = (page: Page) =>
-  page.waitForFunction(
-    () =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      !!(window as any).__mapEngine?.game &&
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).__mapEngine.game.listUnits().length >= 2,
-    undefined,
-    { timeout: 15_000 },
-  );
-
-test('game: selectUnit sets getSelectedUnit + a game:selection scene object, and null clears both', async ({
-  page,
-}) => {
-  await page.goto('/?game=1');
-  await waitForGameBoot(page);
-
-  const result = await page.evaluate(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const me = (window as any).__mapEngine;
-    const id = me.game.listUnits()[0].id as string;
-    me.gameView.selectUnit(id);
-    const selectedAfterSet = me.gameView.getSelectedUnit();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ringAfterSet = me.renderer.scene.getObjectByName('game:selection') as any;
-    // Snapshot booleans now — `ringAfterSet` is a live Three.js object, and
-    // selectUnit(null) below mutates its `.visible` in place, so reading it
-    // lazily later would observe the post-clear state instead of this one.
-    const ringExistsAfterSet = !!ringAfterSet;
-    const ringVisibleAfterSet = !!ringAfterSet?.visible;
-
-    me.gameView.selectUnit(null);
-    const selectedAfterClear = me.gameView.getSelectedUnit();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ringAfterClear = me.renderer.scene.getObjectByName('game:selection') as any;
-    // The ring may be hidden rather than removed — either satisfies "cleared".
-    const ringGoneOrHiddenAfterClear = !ringAfterClear || ringAfterClear.visible === false;
-
-    return {
-      id,
-      selectedAfterSet,
-      ringExistsAfterSet,
-      ringVisibleAfterSet,
-      selectedAfterClear,
-      ringGoneOrHiddenAfterClear,
-    };
-  });
-
-  expect(result.selectedAfterSet).toBe(result.id);
-  expect(result.ringExistsAfterSet).toBe(true);
-  expect(result.ringVisibleAfterSet).toBe(true);
-  expect(result.selectedAfterClear).toBeNull();
-  expect(result.ringGoneOrHiddenAfterClear).toBe(true);
-});
-
-test('game: pickUnit resolves the unit under the pointer (and misses empty space)', async ({
-  page,
-}) => {
-  await page.goto('/?game=1');
-  await waitForGameBoot(page);
-
-  const unitId = await page.evaluate(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const me = (window as any).__mapEngine;
-    const id = me.game.listUnits()[0].id as string;
-    me.gameView.followUnit(id);
-    return id;
-  });
-
-  // The follow camera converges toward the unit over a few frames; poll the
-  // marker's actual rendered world position — not the ground-level sim
-  // position, which the default marker mesh sits lifted above — projected to
-  // client coords, and pickUnit there until it resolves. Reading the marker
-  // object's own world matrix (rather than hardcoding the default marker's
-  // lift) keeps this correct for any unitObject factory.
-  await expect
-    .poll(
-      async () =>
-        page.evaluate((id) => {
+        const label = await page.evaluate(() => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const me = (window as any).__mapEngine;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const obj = me.gameView.group.getObjectByName(`game:unit:${id}`) as any;
-          if (!obj) return null;
-          const target = obj.children[0] ?? obj;
-          target.updateWorldMatrix(true, false);
-          const m = target.matrixWorld.elements;
-          const worldPos = { x: m[12], y: m[13], z: m[14] };
-          const rect = me.renderer.domElement.getBoundingClientRect();
-          const screen = me.renderer.projectToScreen(worldPos);
-          if (!screen.visible) return null;
-          return me.gameView.pickUnit({ x: rect.left + screen.x, y: rect.top + screen.y });
-        }, unitId),
+          const l = (me.gameController.getCityLabels() as any[]).find(
+            (x) => x.cityId === 'jiangling',
+          );
+          return l ?? null;
+        });
+        if (!label || !label.visible) return false;
+        await page.mouse.click(label.x, label.y);
+        const selection = await page.evaluate(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          () => (window as any).__mapEngine.gameController.getState().selection,
+        );
+        return selection?.kind === 'site' && selection.cityId === 'jiangling';
+      },
       { timeout: 30_000 },
     )
-    .toBe(unitId);
+    .toBe(true);
 
-  // A point in the far corner of the viewport (over sky, no unit marker
-  // anywhere near it) must miss.
-  const miss = await page.evaluate(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const me = (window as any).__mapEngine;
-    return me.gameView.pickUnit({ x: 2, y: 2 });
-  });
-  expect(miss).toBeNull();
-});
+  await expect(page.getByTestId('game-selected-panel')).toBeVisible();
+  const trainBtn = page.getByTestId('game-train-btn');
+  await expect(trainBtn).toBeVisible();
+  await expect(trainBtn).toBeEnabled();
 
-test('game: red vs blue units auto-fight and a defeat reduces the unit count', async ({ page }) => {
-  // Generous budget: closing distance + ~10s of mutual combat at default
-  // stats normally finishes in well under a minute, but three Playwright
-  // projects rendering WebGL concurrently can starve requestAnimationFrame
-  // enough to slow the sim's wall-clock progress substantially.
-  test.setTimeout(270_000);
-  await page.goto('/?game=1');
-  await waitForGameBoot(page);
-
-  const setup = await page.evaluate(() => {
+  const beforeResources = await page.evaluate(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const me = (window as any).__mapEngine;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const units = me.game.listUnits() as any[];
-    const reds = units.filter((u) => u.factionId === 'red');
-    const blues = units.filter((u) => u.factionId === 'blue');
-    if (reds.length === 0 || blues.length === 0) return null;
-
-    // The demo's "well-separated" node picking can put factions far apart on
-    // the road graph; pick the closest red/blue pair (by straight-line XZ
-    // distance) so closing the gap stays within the poll timeout below.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let red = reds[0];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let blue = blues[0];
-    let best = Infinity;
-    for (const r of reds) {
-      for (const b of blues) {
-        const d = Math.hypot(r.position.x - b.position.x, r.position.z - b.position.z);
-        if (d < best) {
-          best = d;
-          red = r;
-          blue = b;
-        }
-      }
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).__defeatedEvents = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    me.game.on((e: any) => {
-      if (e.type === 'unit:defeated') (window as any).__defeatedEvents.push(e);
-    });
-
-    const startCount = units.length;
-    const started = me.game.moveUnitTo(red.id, { x: blue.position.x, y: blue.position.z });
-    return { redId: red.id as string, blueId: blue.id as string, startCount, started };
+    return (me.gameController.getState().factions as any[]).find((f) => f.id === 'liubei')
+      .resources;
   });
 
-  expect(setup).not.toBeNull();
-  expect(setup!.started).toBe(true);
+  await trainBtn.click();
 
-  // Closing distance to attackRange plus mutual combat at default stats
-  // (100 hp / 10 dps ≈ 10s) — generous timeout to absorb both, plus the
-  // rendering contention described above.
-  await expect
-    .poll(
-      async () => page.evaluate(() => (window as any).__mapEngine.game.listUnits().length),
-      { timeout: 240_000 },
-    )
-    .toBeLessThan(setup!.startCount);
-
-  const defeatedEvents = await page.evaluate(() => (window as any).__defeatedEvents as unknown[]);
-  expect(defeatedEvents.length).toBeGreaterThan(0);
-});
-
-test('game: sites render in the scene, the HUD is visible, and marching a red unit onto the neutral site captures it', async ({
-  page,
-}) => {
-  // Generous budget: closing the distance to the neutral site plus the
-  // sites' 3s captureTime normally finishes quickly, but three Playwright
-  // projects rendering WebGL concurrently can slow the sim's wall-clock
-  // progress substantially (see the combat test above for the same budget).
-  test.setTimeout(270_000);
-  await page.goto('/?game=1');
-  await waitForGameBoot(page);
-
-  await expect(page.getByTestId('game-hud')).toBeVisible();
-
-  // toBeVisible() alone is occlusion-blind — it would pass even if the HUD
-  // were painted underneath the demo's opaque left side panel (`.atlas-side`,
-  // z-index 20/27) with no stacking context between them, which is exactly
-  // what previously happened. Assert the HUD's rendered rect does not
-  // geometrically intersect the side panel's (when the panel is mounted at
-  // all — on narrow viewports it starts collapsed), and that its text
-  // actually names both factions, so a hidden or empty HUD fails this test.
-  const hudCheck = await page.evaluate(() => {
-    const hudEl = document.querySelector('[data-testid="game-hud"]');
-    const sideEl = document.querySelector('.atlas-side');
-    const hudRect = hudEl?.getBoundingClientRect();
-    const sideRect = sideEl?.getBoundingClientRect();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const factionIds = (window as any).__mapEngine.game.listFactions().map((f: any) => f.id as string);
-    return {
-      text: hudEl?.textContent ?? null,
-      factionIds,
-      hudRect: hudRect
-        ? { x: hudRect.x, y: hudRect.y, right: hudRect.right, bottom: hudRect.bottom }
-        : null,
-      sideRect: sideRect
-        ? { x: sideRect.x, y: sideRect.y, right: sideRect.right, bottom: sideRect.bottom }
-        : null,
-    };
-  });
-  expect(hudCheck.hudRect).not.toBeNull();
-  expect(hudCheck.factionIds.length).toBeGreaterThan(0);
-  for (const factionId of hudCheck.factionIds) {
-    expect(hudCheck.text ?? '').toContain(factionId);
-  }
-  if (hudCheck.sideRect) {
-    const hud = hudCheck.hudRect!;
-    const side = hudCheck.sideRect;
-    const intersects =
-      hud.x < side.right && side.x < hud.right && hud.y < side.bottom && side.y < hud.bottom;
-    expect(intersects).toBe(false);
-  }
-
-  // Every site the simulation knows about must have a corresponding scene
-  // object named `game:site:{id}` (createGameView's contract).
-  const sitesCheck = await page.evaluate(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const me = (window as any).__mapEngine;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sites = me.game.listSites() as any[];
-    const missing = sites
-      .map((s) => s.id as string)
-      .filter((id) => !me.gameView.group.getObjectByName(`game:site:${id}`));
-    return { siteCount: sites.length, missing };
-  });
-  expect(sitesCheck.siteCount).toBeGreaterThan(0);
-  expect(sitesCheck.missing).toEqual([]);
-
-  // Command a red unit onto the neutral site's position — the default demo
-  // world is procedural, so `site:neutral` always exists (see gameSetup.ts).
-  const setup = await page.evaluate(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const me = (window as any).__mapEngine;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const neutral = me.game.getSite('site:neutral') as any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const redUnit = (me.game.listUnits() as any[]).find((u) => u.factionId === 'red');
-    if (!neutral || !redUnit) return null;
-    const started = me.game.moveUnitTo(redUnit.id, {
-      x: neutral.position.x,
-      y: neutral.position.z,
-    });
-    return { started: started as boolean };
-  });
-  expect(setup).not.toBeNull();
-  expect(setup!.started).toBe(true);
-
+  // Resources also tick up ~1-3/s from income while we poll, so `after` is
+  // NOT simply `before - trainCost` — assert on what training can uniquely
+  // prove: the unit count went 3 → 4 AND resources dropped (only `train()`
+  // ever decreases them; income only ever adds).
   await expect
     .poll(
       async () =>
         page.evaluate(() => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const site = (window as any).__mapEngine.game.getSite('site:neutral') as any;
-          return site ? site.ownerFactionId : null;
+          const me = (window as any).__mapEngine;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const liubei = (me.gameController.getState().factions as any[]).find(
+            (f) => f.id === 'liubei',
+          );
+          return { unitCount: liubei.unitCount, resources: liubei.resources };
         }),
-      { timeout: 240_000 },
+      { timeout: 30_000 },
     )
-    .toBe('red');
+    .toEqual(
+      expect.objectContaining({
+        unitCount: 4,
+      }),
+    );
+
+  const afterResources = await page.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const me = (window as any).__mapEngine;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (me.gameController.getState().factions as any[]).find((f) => f.id === 'liubei')
+      .resources;
+  });
+  expect(afterResources).toBeLessThan(beforeResources);
 });
 
-test('game: with ?ai=1, the blue AI opponent trains a unit and commands it', async ({ page }) => {
-  test.setTimeout(150_000);
-  await page.goto('/?game=1&ai=1');
-  await waitForGameBoot(page);
+test('game: capturing all 8 cities as 劉備 ends the game in victory', async ({ page }) => {
+  // captureTime is 5 sim-seconds per site and three concurrent Playwright
+  // projects rendering WebGL can starve requestAnimationFrame badly — budget
+  // generously, as the other game.spec.ts tests do for the same reason.
+  test.setTimeout(180_000);
+  await routeFlatElevation(page);
+  await page.goto('/?map=three-kingdoms&era=y219&game=1');
 
-  const startBlueCount = await page.evaluate(
-    () =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).__mapEngine.game.listUnits().filter((u: any) => u.factionId === 'blue')
-        .length,
-  );
+  await expect(page.getByTestId('game-lobby')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('game-faction-card-liubei').locator('button').click();
 
-  // Blue starts with 60 resources and training costs 50, so this fires on
-  // the AI's first decision pass (~1 sim-second) — poll a single snapshot
-  // until BOTH hold together: blue has grown past its starting count AND at
-  // least one blue unit is actively moving/fighting, proving the AI both
-  // trained and issued a command (not just one or the other, on different
-  // frames).
   await expect
     .poll(
       async () =>
-        page.evaluate((start) => {
+        page.evaluate(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const units = (window as any).__mapEngine.game.listUnits() as any[];
-          const blues = units.filter((u) => u.factionId === 'blue');
-          const grew = blues.length > start;
-          const activeBlue = blues.some((u) => u.state === 'moving' || u.state === 'fighting');
-          return grew && activeBlue;
-        }, startBlueCount),
+          () => (window as any).__mapEngine.gameController.getState().phase,
+        ),
+      { timeout: 30_000 },
+    )
+    .toBe('playing');
+
+  // Drop a 劉備 unit directly on every enemy-owned site so it starts
+  // capturing immediately. `Site.position` is a `Vec3` ({x, y, z}) but
+  // `spawnUnit`'s `position` option is a `Vec2` where `.y` means WORLD Z, not
+  // world height — passing `site.position.y` here silently teleports the unit
+  // to the wrong place and cost a previous agent an hour to debug. Always map
+  // `{ x: position.x, y: position.z }`.
+  //
+  // Every scenario city's starting unit is spawned at the road node nearest
+  // its own city — which, verified live, coincides EXACTLY with the city
+  // position for all 5 non-劉備 cities. So a plain same-stats invader lands
+  // directly on top of the defender: both engage at zero range and, with
+  // identical hp/attackDamage, trade a mutual kill in ~10 sim-seconds —
+  // capture progress never accrues (nobody's left standing), and the two AI
+  // factions, now unopposed, spend the rest of the budget conquering each
+  // other AND the player's own cities instead (verified against a live debug
+  // run: phase ended 'lost', not 'won'). Overwhelming combat stats make the
+  // invader a one-tick executioner instead of an even trade: the defender
+  // dies before it can return meaningful damage, the invader is left standing
+  // alone, and the site starts capturing normally from there.
+  await page.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const me = (window as any).__mapEngine;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sites = me.game.listSites() as any[];
+    for (const site of sites) {
+      if (site.ownerFactionId === 'liubei') continue;
+      me.game.spawnUnit({
+        factionId: 'liubei',
+        position: { x: site.position.x, y: site.position.z },
+        hp: 1e6,
+        attackDamage: 1e6,
+      });
+    }
+  });
+
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          () => (window as any).__mapEngine.gameController.getState().phase,
+        ),
       { timeout: 120_000 },
     )
-    .toBe(true);
+    .toBe('won');
 
-  // Also confirm the AI controller was actually constructed and exposed.
-  const aiCount = await page.evaluate(() => (window as any).__mapEngine.gameAis?.length ?? 0);
-  expect(aiCount).toBe(1);
+  await expect(page.getByTestId('game-end-overlay')).toBeVisible();
+  await expect(page.getByTestId('game-end-overlay')).toContainText('勝利');
+  await expect(page.getByTestId('game-restart-btn')).toBeVisible();
 });
