@@ -23,10 +23,19 @@ import {
  * engagement, movement and damage in three fixed phases (see `tick` below), so
  * combat is as reproducible as movement.
  *
- * Determinism: given the same world, the same spawn/command calls and the same
- * `dt` sequence, unit positions, hp and the event stream are identical every
- * run. Units are ticked and events flushed in insertion order; targeting ties
- * break on unit id. Hp never regenerates.
+ * On top of units it can own two optional, construction-time collections:
+ * **sites** — fixed capturable map points that change hands when one faction
+ * holds them uncontested — and **factions**, which accrue resources from the
+ * sites they own and spend them on {@link GameSimulation.trainUnit}. A
+ * simulation created without either behaves exactly like one from before they
+ * existed, down to the event stream.
+ *
+ * Determinism: given the same world, the same construction options, the same
+ * spawn/command calls and the same `dt` sequence, unit positions and hp, site
+ * ownership and capture progress, faction resources and the event stream are
+ * identical every run. Units, sites and factions are iterated in insertion
+ * order and events flushed in emission order; targeting ties break on unit id.
+ * Hp never regenerates.
  */
 
 export type UnitId = string;
@@ -91,6 +100,89 @@ export type SpawnOptions = {
   data?: Record<string, unknown>;
 };
 
+/**
+ * A capturable map point. Sites are fixed at construction: id, position and the
+ * capture/income parameters never change. Ownership, the capturing faction and
+ * capture progress are mutated by `tick` — `listSites`/`getSite` hand back live
+ * references, so read them freely but never write them.
+ */
+export type Site = {
+  readonly id: string;
+  /** Display label. Defaults to `id`. */
+  readonly name: string;
+  /** World position; `y` is the ground height sampled once, at construction. */
+  readonly position: Vec3;
+  /** Hold radius in world units (XZ distance, inclusive). */
+  readonly captureRadius: number;
+  /** Seconds of sole uncontested presence needed to flip ownership. */
+  readonly captureTime: number;
+  /** Resources per second paid to the owning faction. */
+  readonly income: number;
+  /** Owning faction, or null when neutral. */
+  ownerFactionId: string | null;
+  /** Faction currently accruing progress; null whenever `captureProgress` is 0. */
+  capturingFactionId: string | null;
+  /** Seconds accrued toward `captureTime` by `capturingFactionId`. */
+  captureProgress: number;
+  /** Free-form caller data. Never read by the simulation. */
+  readonly data: Record<string, unknown>;
+};
+
+export type SiteDefinition = {
+  /** Unique id; a duplicate throws at construction. */
+  id: string;
+  name?: string;
+  /** World XZ (`.y` = world z), like `SpawnOptions.position`. Snapped to ground. */
+  position: Vec2;
+  /**
+   * Initial owner; omitted = neutral. May name a faction absent from
+   * `GameSimulationOptions.factions` — legal, the income is simply paid to
+   * nobody.
+   */
+  ownerFactionId?: string;
+  /** Default 12. Non-finite or `<= 0` falls back to the default. */
+  captureRadius?: number;
+  /** Default 5. Non-finite or `<= 0` falls back to the default. */
+  captureTime?: number;
+  /** Default 1. Non-finite or negative becomes 0 (a site paying nothing is legal). */
+  income?: number;
+  data?: Record<string, unknown>;
+};
+
+/** A faction that holds resources and can train units. */
+export type FactionDefinition = {
+  /** Unique id; a duplicate throws at construction. */
+  id: string;
+  /** Starting stock. Default 0. Non-finite or negative becomes 0. */
+  resources?: number;
+  /** Resources per second earned regardless of sites. Default 0. */
+  income?: number;
+};
+
+/**
+ * Live faction bookkeeping. `resources` is mutated every `tick` — read it, never
+ * write it. Units may carry a `factionId` that was never registered as a
+ * faction: combat is unaffected, but such a faction accrues nothing and cannot
+ * train.
+ */
+export type FactionState = {
+  readonly id: string;
+  /** Resources per second earned regardless of sites. */
+  readonly baseIncome: number;
+  resources: number;
+};
+
+export type TrainOptions = {
+  /** Where to train. Must exist and be owned by the training faction. */
+  siteId: string;
+  /** Resources to deduct. Must be finite and `>= 0`. */
+  cost: number;
+  /** Explicit id for the new unit; a duplicate throws, as `spawnUnit` does. */
+  id?: UnitId;
+  /** Forwarded to the spawn. Position and faction are set by `trainUnit`. */
+  unit?: Omit<SpawnOptions, 'id' | 'position' | 'atNode' | 'factionId'>;
+};
+
 export type GameEvent =
   | { type: 'unit:spawned'; unitId: UnitId }
   | { type: 'unit:waypoint'; unitId: UnitId; nodeIndex: number }
@@ -99,7 +191,20 @@ export type GameEvent =
   | { type: 'unit:combat'; attackerId: UnitId; defenderId: UnitId; damage: number }
   /** Emitted immediately before the `unit:removed` of a unit killed in combat. */
   | { type: 'unit:defeated'; unitId: UnitId; attackerId: UnitId }
-  | { type: 'unit:removed'; unitId: UnitId };
+  | { type: 'unit:removed'; unitId: UnitId }
+  /**
+   * A faction started accruing capture progress on a site: its first tick as the
+   * sole attacker, or the tick it took over from a different attacker (progress
+   * resets to 0 either way).
+   */
+  | { type: 'site:capture-started'; siteId: string; factionId: string }
+  /** A site changed hands. `previousOwnerFactionId` is null for a neutral site. */
+  | {
+      type: 'site:captured';
+      siteId: string;
+      factionId: string;
+      previousOwnerFactionId: string | null;
+    };
 
 export interface GameSimulation {
   readonly index: RoadGraphIndex;
@@ -117,10 +222,29 @@ export interface GameSimulation {
   setUnitPath(id: UnitId, path: PathResult): boolean;
   /** Stop a unit where it is (state → 'idle', clears its route). */
   stopUnit(id: UnitId): void;
+  /** Every site, in the order declared at construction. Live references. */
+  listSites(): Site[];
+  getSite(id: string): Site | undefined;
+  /** Every registered faction, in registration order. Live references. */
+  listFactions(): FactionState[];
+  getFaction(id: string): FactionState | undefined;
+  /**
+   * Pay `opts.cost` out of the faction's resources and spawn a unit of that
+   * faction at the site's position (state `'idle'`; `unit:spawned` is emitted
+   * synchronously, exactly as with `spawnUnit`).
+   *
+   * Returns null — changing nothing and emitting nothing — when the faction is
+   * not registered, the site is unknown, the site is not owned by that faction,
+   * `cost` is negative or not finite, or the faction cannot afford it. Throws
+   * only for a duplicate unit id — whether `opts.id` is explicit or, when
+   * omitted, the id `spawnUnit` would otherwise auto-generate — and always
+   * does so before spending anything.
+   */
+  trainUnit(factionId: string, opts: TrainOptions): Unit | null;
   /**
    * Advance the simulation by `dt` seconds and flush the resulting events.
    *
-   * Three phases, in this order (all `dt > 0` only):
+   * Five phases, in this order (all `dt > 0` only):
    * 1. **Engagement**, evaluated on tick-start positions: every unit with a
    *    non-null `factionId` and `attackDamage > 0` targets the nearest living
    *    enemy (different non-null faction) within `attackRange`, ties broken by
@@ -131,11 +255,31 @@ export interface GameSimulation {
    * 3. **Damage**: every engagement's `attackDamage * dt` is computed from the
    *    phase-1 targeting and only then applied, so mutual kills are symmetric.
    *    Units brought to `hp <= 0` are removed.
+   * 4. **Capture**, on post-movement positions and the post-damage unit set (a
+   *    unit killed this tick never counts). Per site, in declaration order, the
+   *    factions *present* are those of units within `captureRadius`
+   *    (non-combatants never count) and the *attackers* are the present
+   *    factions other than the owner:
+   *    - exactly one attacker and the owner absent → that faction becomes
+   *      `capturingFactionId` (resetting progress and emitting
+   *      `site:capture-started` if it wasn't already), then `captureProgress`
+   *      grows by `dt`; reaching `captureTime` flips `ownerFactionId` and emits
+   *      `site:captured` (both events can fire for one site in one tick);
+   *    - contested (owner present alongside an attacker, or two or more
+   *      attacking factions) → progress and capturer frozen, no events;
+   *    - no attackers → progress decays by `dt`, and reaching 0 clears the
+   *      capturer.
+   * 5. **Income**: every registered faction, in registration order, gains
+   *    `(baseIncome + the income of the sites it owns) * dt`, using ownership as
+   *    of *after* phase 4 — so a site captured this tick already pays this tick.
+   *    Sites owned by an unregistered faction pay nobody. No events.
    *
    * Event order within one tick is fixed: movement events (waypoint/arrival) in
    * unit insertion order, then one `unit:combat` per attacker in attacker
    * insertion order, then — per defeated unit in insertion order —
-   * `unit:defeated` immediately followed by `unit:removed`.
+   * `unit:defeated` immediately followed by `unit:removed`, and finally site
+   * events in site declaration order (`site:capture-started` before
+   * `site:captured` for the same site).
    */
   tick(dt: number): void;
   /**
@@ -159,6 +303,16 @@ export type GameSimulationOptions = {
    * `buildGraphIndex` / {@link EdgeCostFn}). Applied once, at construction.
    */
   edgeCost?: EdgeCostFn;
+  /**
+   * Capturable sites, fixed for the simulation's lifetime. Omit for a
+   * unit-only simulation.
+   */
+  sites?: SiteDefinition[];
+  /**
+   * Factions that hold resources and can train units. Combat does not require
+   * registration — a unit's `factionId` is independent of this list.
+   */
+  factions?: FactionDefinition[];
 };
 
 /** Internal per-unit movement geometry (arc-length parameterised polyline). */
@@ -171,6 +325,17 @@ type Mover = {
   waypoints: { arc: number; nodeIndex: number }[];
   nextWaypoint: number;
 };
+
+/** A finite positive number, else the default — for radii and durations. */
+function positiveOr(v: number | undefined, fallback: number): number {
+  return v === undefined || !Number.isFinite(v) || v <= 0 ? fallback : v;
+}
+
+/** A finite non-negative number: undefined → default, junk or negative → 0. */
+function nonNegativeOr(v: number | undefined, fallback: number): number {
+  if (v === undefined) return fallback;
+  return !Number.isFinite(v) || v < 0 ? 0 : v;
+}
 
 export function createGameSimulation(
   world: MapWorld,
@@ -191,6 +356,38 @@ export function createGameSimulation(
    * `stopUnit`/`moveUnitTo` calls made mid-fight win over the stale value.
    */
   const preFightState = new Map<UnitId, UnitState>();
+
+  // Sites and factions are built once, here: insertion order is the declaration
+  // order every phase and getter iterates in, which is what makes capture and
+  // income accumulation reproducible.
+  const sites = new Map<string, Site>();
+  for (const def of opts.sites ?? []) {
+    if (sites.has(def.id)) throw new Error(`Site id already exists: ${def.id}`);
+    const x = def.position.x;
+    const z = def.position.y;
+    sites.set(def.id, {
+      id: def.id,
+      name: def.name ?? def.id,
+      position: { x, y: groundY(x, z), z },
+      captureRadius: positiveOr(def.captureRadius, 12),
+      captureTime: positiveOr(def.captureTime, 5),
+      income: nonNegativeOr(def.income, 1),
+      ownerFactionId: def.ownerFactionId ?? null,
+      capturingFactionId: null,
+      captureProgress: 0,
+      data: def.data ?? {},
+    });
+  }
+  const factions = new Map<string, FactionState>();
+  for (const def of opts.factions ?? []) {
+    if (factions.has(def.id)) throw new Error(`Faction id already exists: ${def.id}`);
+    factions.set(def.id, {
+      id: def.id,
+      baseIncome: nonNegativeOr(def.income, 0),
+      resources: nonNegativeOr(def.resources, 0),
+    });
+  }
+
   const handlers = new Set<(e: GameEvent) => void>();
   const pending: GameEvent[] = [];
   let autoId = 0;
@@ -434,6 +631,104 @@ export function createGameSimulation(
     }
   };
 
+  /**
+   * Phase 4 — capture, on post-movement positions and the post-damage unit set.
+   * Sites are walked in declaration order and each is decided independently by
+   * who stands inside it: sole attacker accrues, contested freezes, empty
+   * decays. Only ownership flips and capturer changes emit events; progress is
+   * polled (`getSite`) rather than broadcast, so a fight over a site does not
+   * flood the event stream the way per-tick progress events would.
+   */
+  const resolveCapture = (dt: number): void => {
+    if (sites.size === 0) return;
+    for (const site of sites.values()) {
+      const owner = site.ownerFactionId;
+      // Factions with at least one unit inside the radius. Non-combatants
+      // (null faction) never hold ground.
+      const present = new Set<string>();
+      for (const unit of units.values()) {
+        if (unit.factionId === null) continue;
+        if (present.has(unit.factionId)) continue;
+        const dx = unit.position.x - site.position.x;
+        const dz = unit.position.z - site.position.z;
+        if (Math.hypot(dx, dz) <= site.captureRadius) present.add(unit.factionId);
+      }
+      let attackers = 0;
+      let soleAttacker: string | null = null;
+      for (const factionId of present) {
+        if (factionId === owner) continue;
+        attackers++;
+        soleAttacker = factionId;
+      }
+      const ownerPresent = owner !== null && present.has(owner);
+
+      if (attackers === 1 && !ownerPresent && soleAttacker !== null) {
+        if (site.capturingFactionId !== soleAttacker) {
+          site.capturingFactionId = soleAttacker;
+          site.captureProgress = 0;
+          emit({ type: 'site:capture-started', siteId: site.id, factionId: soleAttacker });
+        }
+        site.captureProgress += dt;
+        if (site.captureProgress >= site.captureTime) {
+          site.ownerFactionId = soleAttacker;
+          site.capturingFactionId = null;
+          site.captureProgress = 0;
+          emit({
+            type: 'site:captured',
+            siteId: site.id,
+            factionId: soleAttacker,
+            previousOwnerFactionId: owner,
+          });
+        }
+      } else if (attackers === 0) {
+        site.captureProgress = Math.max(0, site.captureProgress - dt);
+        if (site.captureProgress === 0) site.capturingFactionId = null;
+      }
+      // Otherwise contested: progress and capturer are frozen, silently.
+    }
+  };
+
+  /**
+   * Phase 5 — income, on post-capture ownership, so a site taken this tick
+   * already pays for it. Site income is summed in declaration order and
+   * factions credited in registration order, keeping the float arithmetic
+   * bit-for-bit reproducible.
+   */
+  const resolveIncome = (dt: number): void => {
+    if (factions.size === 0) return;
+    const fromSites = new Map<string, number>();
+    for (const site of sites.values()) {
+      const owner = site.ownerFactionId;
+      if (owner === null) continue;
+      fromSites.set(owner, (fromSites.get(owner) ?? 0) + site.income);
+    }
+    for (const faction of factions.values()) {
+      faction.resources += (faction.baseIncome + (fromSites.get(faction.id) ?? 0)) * dt;
+    }
+  };
+
+  const trainUnit = (factionId: string, o: TrainOptions): Unit | null => {
+    const faction = factions.get(factionId);
+    if (!faction) return null;
+    const site = sites.get(o.siteId);
+    if (!site || site.ownerFactionId !== factionId) return null;
+    if (!Number.isFinite(o.cost) || o.cost < 0) return null;
+    if (faction.resources < o.cost) return null;
+    // Validate the id — explicit, or the auto-generated candidate spawnUnit
+    // would otherwise assign — before spending, so a throw always leaves
+    // resources untouched, even when an omitted id happens to collide with a
+    // unit the caller created earlier under that literal auto-generated id.
+    const candidateId = o.id ?? `unit:${autoId}`;
+    if (units.has(candidateId)) throw new Error(`Unit id already exists: ${candidateId}`);
+    faction.resources -= o.cost;
+    return spawnUnit({
+      ...o.unit,
+      id: o.id,
+      position: { x: site.position.x, y: site.position.z },
+      factionId,
+    });
+  };
+
   const tick = (dt: number): void => {
     if (dt > 0) {
       const targets = selectTargets();
@@ -494,6 +789,8 @@ export function createGameSimulation(
         }
       }
       resolveCombat(targets, dt);
+      resolveCapture(dt);
+      resolveIncome(dt);
     }
     flush();
   };
@@ -507,6 +804,11 @@ export function createGameSimulation(
     moveUnitTo,
     setUnitPath,
     stopUnit,
+    listSites: () => [...sites.values()],
+    getSite: (id) => sites.get(id),
+    listFactions: () => [...factions.values()],
+    getFaction: (id) => factions.get(id),
+    trainUnit,
     tick,
     on(handler) {
       handlers.add(handler);

@@ -89,6 +89,13 @@ export interface ThreeMapRenderer {
     event: K,
     handler: (payload: MapEngineEvents[K]) => void,
   ): () => void;
+  /**
+   * Register a per-frame callback; returns an unsubscribe function. Callbacks
+   * fire in registration order (insertion-ordered internally) — consumers
+   * rely on this, e.g. `createGameView` composes with an AI controller
+   * registered first via this same order so the AI decides before the view
+   * ticks the simulation within the same frame.
+   */
   onFrame(cb: (dt: number) => void): () => void;
   dispose(): void;
 }

@@ -1,7 +1,7 @@
 {
   "name": "@map-engine/game",
   "version": "0.1.0",
-  "description": "Game-logic layer for @map-engine/core — A* pathfinding over the road graph, deterministic unit movement and a lightweight event-driven simulation. Zero DOM/Three.js dependencies.",
+  "description": "Game-logic layer for @map-engine/core — weighted A* pathfinding, deterministic unit movement and faction combat, capturable sites and faction resources, a deterministic AI opponent, and a lightweight event-driven simulation. Zero DOM/Three.js dependencies.",
   "license": "MIT",
   "author": "Gordon Ling",
   "homepage": "https://gordonlinghk.github.io/3d-map-engine/",

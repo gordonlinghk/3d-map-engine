@@ -19,14 +19,8 @@ import type {
   MapPresetId,
   MapWorld,
 } from '@map-engine/core';
-import {
-  createBuildingEditor,
-  createGameView,
-  createThreeMapRenderer,
-  createTour,
-} from '@map-engine/three';
-import type { BuildingEditor, GameView, ThreeMapRenderer, Tour } from '@map-engine/three';
-import { createGameSimulation, nearestNode } from '@map-engine/game';
+import { createBuildingEditor, createThreeMapRenderer, createTour } from '@map-engine/three';
+import type { BuildingEditor, ThreeMapRenderer, Tour } from '@map-engine/three';
 import { AtlasUI, useAtlasStore } from '@map-engine/ui';
 import {
   CITY_PRESETS,
@@ -42,6 +36,8 @@ import { getStoredApiKey, promptToDirectives, storeApiKey } from './promptToMap'
 import { applyTerrainToWorld, fetchElevationGrid } from '@map-engine/terrain';
 import { HISTORICAL_MAPS, historicalToWorld } from '@map-engine/historical';
 import { saveDraftFile, stashPendingDraft, takePendingDraft } from './drafts';
+import { setupGameDemo } from './gameSetup';
+import type { GameDemoHandles } from './gameSetup';
 
 const DEFAULT_SEED = 'sf-atlas-001';
 const DEFAULT_PRESET: MapPresetId = 'coastal-tech-city';
@@ -126,7 +122,7 @@ export function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const tourRef = useRef<Tour | null>(null);
   const editorRef = useRef<BuildingEditor | null>(null);
-  const gameViewRef = useRef<GameView | null>(null);
+  const gameDemoRef = useRef<GameDemoHandles | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // How to rebuild the current base world + identity of the draft being edited.
   const draftRef = useRef<{
@@ -172,9 +168,6 @@ export function App() {
     // Cancels in-flight OSM fetches when the effect is torn down (StrictMode
     // double-mount would otherwise keep the first boot's tiles downloading).
     const bootAbort = new AbortController();
-    // Set only when the opt-in `?game=1` block wires up a click-to-move
-    // listener — torn down alongside everything else on cleanup.
-    let gameClickCleanup: (() => void) | null = null;
     const boot = async (): Promise<void> => {
       const { seed, preset, directives, environment } = readUrlParams();
       const params = new URLSearchParams(window.location.search);
@@ -353,88 +346,16 @@ export function App() {
 
       // Opt-in game-layer demo — fully inert unless `?game=1` is present, so
       // it cannot affect the default demo or the existing e2e suite.
-      if (params.get('game') === '1') {
-        const sim = createGameSimulation(world);
-        const startNode = nearestNode(sim.index, 0, 0);
-        if (startNode) {
-          // BFS over the road graph from the world-center node to find every
-          // node it can reach — units are only spawned within this connected
-          // component so every unit can always route to every other.
-          const reachable = new Set<string>([startNode]);
-          const queue: string[] = [startNode];
-          while (queue.length > 0) {
-            const cur = queue.shift() as string;
-            for (const edge of sim.index.adjacency.get(cur) ?? []) {
-              if (!reachable.has(edge.to)) {
-                reachable.add(edge.to);
-                queue.push(edge.to);
-              }
-            }
-          }
-          const startPos = sim.index.nodeById.get(startNode);
-          const remainder = [...reachable]
-            .filter((id) => id !== startNode)
-            .sort((a, b) => {
-              const pa = sim.index.nodeById.get(a);
-              const pb = sim.index.nodeById.get(b);
-              const da = pa && startPos ? (pa.x - startPos.x) ** 2 + (pa.z - startPos.z) ** 2 : 0;
-              const db = pb && startPos ? (pb.x - startPos.x) ** 2 + (pb.z - startPos.z) ** 2 : 0;
-              return da - db;
-            });
-          // Pick up to 6 well-separated nodes: the start node plus up to 5
-          // more spread evenly across the nearest→farthest ordering of the
-          // rest of the component, so routes between units are visibly long.
-          const extraSlots = Math.min(5, remainder.length);
-          const picks: (string | undefined)[] = [startNode];
-          for (let i = 0; i < extraSlots; i++) {
-            const idx =
-              extraSlots === 1 ? 0 : Math.round((i * (remainder.length - 1)) / (extraSlots - 1));
-            picks.push(remainder[idx]);
-          }
-          const chosenNodeIds = [...new Set(picks)].filter((id): id is string => !!id);
-
-          if (chosenNodeIds.length >= 2) {
-            // FROZEN invariant: the first two spawned units (insertion order)
-            // must share a faction — e2e commands unit 0 onto unit 1 and
-            // expects it to arrive rather than start fighting. Assigning the
-            // first 3 picks to 'red' and the rest to 'blue' preserves this
-            // even when the graph yields fewer than 6 nodes.
-            chosenNodeIds.forEach((nodeId, i) =>
-              sim.spawnUnit({
-                atNode: nodeId,
-                kind: 'soldier',
-                speed: 30,
-                factionId: i < 3 ? 'red' : 'blue',
-              }),
-            );
-            const view = createGameView(renderer, sim, {
-              factionColors: { red: '#c0392b', blue: '#2d7dd2' },
-            });
-            gameViewRef.current = view;
-
-            const me = (window as unknown as Record<string, unknown>).__mapEngine as Record<
-              string,
-              unknown
-            >;
-            me.game = sim;
-            me.gameView = view;
-
-            const onGameClick = (e: MouseEvent): void => {
-              const pointer = { x: e.clientX, y: e.clientY };
-              const hitUnit = view.pickUnit(pointer);
-              if (hitUnit) {
-                view.selectUnit(hitUnit);
-                return;
-              }
-              const selected = view.getSelectedUnit();
-              if (!selected) return;
-              const point = renderer.pickGround(pointer);
-              if (point) sim.moveUnitTo(selected, { x: point.x, y: point.z });
-            };
-            renderer.domElement.addEventListener('click', onGameClick);
-            gameClickCleanup = () => renderer.domElement.removeEventListener('click', onGameClick);
-          }
-        }
+      const gameDemo = setupGameDemo(renderer, world, params);
+      if (gameDemo) {
+        gameDemoRef.current = gameDemo;
+        const me = (window as unknown as Record<string, unknown>).__mapEngine as Record<
+          string,
+          unknown
+        >;
+        me.game = gameDemo.sim;
+        me.gameView = gameDemo.view;
+        me.gameAis = gameDemo.ais;
       }
 
       setEngine({ renderer, world });
@@ -446,9 +367,8 @@ export function App() {
       bootAbort.abort();
       tourRef.current?.stop();
       editorRef.current?.dispose();
-      gameClickCleanup?.();
-      gameViewRef.current?.dispose();
-      gameViewRef.current = null;
+      gameDemoRef.current?.dispose();
+      gameDemoRef.current = null;
       renderer.dispose();
       setEngine(null);
     };

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { GameSimulation, Unit, UnitId } from '@map-engine/game';
+import type { GameSimulation, Site, Unit, UnitId } from '@map-engine/game';
 import type { ThreeMapRenderer } from './renderer';
 
 /** Marker color by unit kind — extend as new unit kinds are introduced. */
@@ -8,12 +8,28 @@ const KIND_COLORS: Record<string, string> = {
   cart: '#2d7dd2',
 };
 const DEFAULT_COLOR = '#e0b53a';
+const DEFAULT_NEUTRAL_SITE_COLOR = '#9aa0a6';
 
 export type GameViewOptions = {
   /** Factory for a unit's 3D object. Default: a small colored arrow marker. */
   unitObject?: (unit: Unit) => THREE.Object3D;
-  /** Marker color per factionId; wins over kind color. */
+  /** Marker color per factionId; wins over kind color, and colors sites too. */
   factionColors?: Record<string, string>;
+  /**
+   * Factory for a site's 3D object. Default: a translucent ground disc (radius
+   * = `site.captureRadius`) whose color tracks the owner, plus a progress ring.
+   *
+   * When supplied, the view manages this object's name, position and disposal
+   * (traversed and its geometries/materials disposed in `dispose()`, exactly
+   * like `unitObject`) — but NOT the per-frame owner-color and
+   * capture-progress sync described below, which applies only to the default
+   * marker. A custom object must handle its own visual response to ownership
+   * and capture progress, e.g. by reading `site` (which is a live, mutable
+   * reference) inside its own render-loop hook.
+   */
+  siteObject?: (site: Site) => THREE.Object3D;
+  /** Site color when the owner is null or has no entry in `factionColors`. Default `'#9aa0a6'`. */
+  neutralSiteColor?: string;
 };
 
 export interface GameView {
@@ -68,6 +84,81 @@ function createSelectionRing(): THREE.Mesh {
   return ring;
 }
 
+/** Owner-tracking color lookup shared by the default site disc and progress ring. */
+function factionOrNeutralColor(
+  factionId: string | null,
+  factionColors: Record<string, string> | undefined,
+  neutralColor: string,
+): string {
+  return (factionId !== null ? factionColors?.[factionId] : undefined) ?? neutralColor;
+}
+
+/** Bookkeeping for one site's 3D object, kept so `sync()` can update default markers. */
+type SiteEntry = {
+  readonly site: Site;
+  readonly obj: THREE.Object3D;
+  /** Present only for the default marker — a custom `siteObject` manages its own visuals. */
+  readonly disc?: THREE.Mesh;
+  readonly progressRing?: THREE.Mesh;
+  /**
+   * Faction id (or null) last applied to `disc`'s color, so `syncSites` only
+   * re-parses a CSS color string when ownership actually changed instead of
+   * every frame for every site.
+   */
+  lastOwnerFactionId?: string | null;
+  /** Same idea as `lastOwnerFactionId`, for `progressRing`'s color. */
+  lastCapturingFactionId?: string | null;
+};
+
+/**
+ * Default site marker: a flat translucent ground disc (radius = `site.captureRadius`)
+ * colored by owner, plus a child progress ring named `game:site:progress:{id}` that is
+ * visible only while a capture is in progress and grows toward the disc's radius as
+ * `captureProgress` approaches `captureTime`. Both are laid flat and lifted slightly
+ * above the site's ground position, like `createSelectionRing`.
+ */
+function createDefaultSiteMarker(
+  site: Site,
+  factionColors: Record<string, string> | undefined,
+  neutralSiteColor: string,
+): { obj: THREE.Object3D; disc: THREE.Mesh; progressRing: THREE.Mesh } {
+  const group = new THREE.Group();
+
+  const discGeo = new THREE.CircleGeometry(site.captureRadius, 32);
+  discGeo.rotateX(-Math.PI / 2);
+  const discMat = new THREE.MeshBasicMaterial({
+    color: factionOrNeutralColor(site.ownerFactionId, factionColors, neutralSiteColor),
+    transparent: true,
+    opacity: 0.32,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const disc = new THREE.Mesh(discGeo, discMat);
+  disc.position.y = 0.05;
+  disc.renderOrder = 5;
+  group.add(disc);
+
+  // Base geometry spans the full capture radius; per-frame scale.set(frac, 1, frac)
+  // shrinks it back down so it visibly grows as captureProgress approaches captureTime.
+  const progressGeo = new THREE.RingGeometry(site.captureRadius * 0.82, site.captureRadius, 32);
+  progressGeo.rotateX(-Math.PI / 2);
+  const progressMat = new THREE.MeshBasicMaterial({
+    color: factionOrNeutralColor(site.capturingFactionId, factionColors, neutralSiteColor),
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const progressRing = new THREE.Mesh(progressGeo, progressMat);
+  progressRing.name = `game:site:progress:${site.id}`;
+  progressRing.position.y = 0.1;
+  progressRing.renderOrder = 6;
+  progressRing.visible = false;
+  group.add(progressRing);
+
+  return { obj: group, disc, progressRing };
+}
+
 export function createGameView(
   renderer: ThreeMapRenderer,
   simulation: GameSimulation,
@@ -84,6 +175,37 @@ export function createGameView(
   let selectedId: UnitId | null = null;
   const selectionRing = createSelectionRing();
   group.add(selectionRing);
+
+  // Sites are fixed for the simulation's lifetime: built once here, no add/remove path.
+  // Deliberately NOT entered into `unitByObject` — see pickUnit below.
+  const neutralSiteColor = options?.neutralSiteColor ?? DEFAULT_NEUTRAL_SITE_COLOR;
+  const siteEntries: SiteEntry[] = [];
+  for (const site of simulation.listSites()) {
+    let obj: THREE.Object3D;
+    let disc: THREE.Mesh | undefined;
+    let progressRing: THREE.Mesh | undefined;
+    if (options?.siteObject) {
+      obj = options.siteObject(site);
+    } else {
+      const marker = createDefaultSiteMarker(site, options?.factionColors, neutralSiteColor);
+      obj = marker.obj;
+      disc = marker.disc;
+      progressRing = marker.progressRing;
+    }
+    obj.name = `game:site:${site.id}`;
+    obj.position.set(site.position.x, site.position.y, site.position.z);
+    group.add(obj);
+    siteEntries.push({
+      site,
+      obj,
+      disc,
+      progressRing,
+      // Matches the color createDefaultSiteMarker just applied above, so the
+      // first syncSites() call correctly skips re-applying it.
+      lastOwnerFactionId: site.ownerFactionId,
+      lastCapturingFactionId: null,
+    });
+  }
 
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
@@ -139,6 +261,40 @@ export function createGameView(
     selectionRing.position.set(u.position.x, u.position.y + 0.5, u.position.z);
   };
 
+  /**
+   * Re-color and re-scale each default site marker from its live `Site` state.
+   * Colors are only re-parsed from their CSS strings when the relevant
+   * faction id actually changed since the last frame — with dozens of sites
+   * (e.g. the historical world's ~51), re-parsing unconditionally every frame
+   * for values that change roughly once per capture is wasted work.
+   */
+  const syncSites = (): void => {
+    for (const entry of siteEntries) {
+      if (!entry.disc || !entry.progressRing) continue; // custom siteObject: caller-managed
+      const { site, disc, progressRing } = entry;
+      if (entry.lastOwnerFactionId !== site.ownerFactionId) {
+        (disc.material as THREE.MeshBasicMaterial).color.set(
+          factionOrNeutralColor(site.ownerFactionId, options?.factionColors, neutralSiteColor),
+        );
+        entry.lastOwnerFactionId = site.ownerFactionId;
+      }
+      if (site.captureProgress > 0) {
+        progressRing.visible = true;
+        const frac =
+          site.captureTime > 0 ? Math.min(site.captureProgress / site.captureTime, 1) : 0;
+        progressRing.scale.set(frac, 1, frac);
+        if (entry.lastCapturingFactionId !== site.capturingFactionId) {
+          (progressRing.material as THREE.MeshBasicMaterial).color.set(
+            factionOrNeutralColor(site.capturingFactionId, options?.factionColors, neutralSiteColor),
+          );
+          entry.lastCapturingFactionId = site.capturingFactionId;
+        }
+      } else {
+        progressRing.visible = false;
+      }
+    }
+  };
+
   const sync = (): void => {
     for (const [id, obj] of objects) {
       const u = simulation.getUnit(id);
@@ -147,6 +303,7 @@ export function createGameView(
       obj.rotation.y = u.heading;
     }
     updateSelectionRing();
+    syncSites();
   };
 
   const offFrame = renderer.onFrame((dt) => {
@@ -211,6 +368,16 @@ export function createGameView(
       offFrame();
       renderer.setFollowTarget(null);
       for (const id of [...objects.keys()]) removeMesh(id);
+      for (const entry of siteEntries) {
+        group.remove(entry.obj);
+        entry.obj.traverse((o) => {
+          if (o instanceof THREE.Mesh) {
+            o.geometry.dispose();
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            for (const m of mats) m.dispose();
+          }
+        });
+      }
       group.remove(selectionRing);
       selectionRing.geometry.dispose();
       (selectionRing.material as THREE.Material).dispose();

@@ -272,3 +272,139 @@ test('game: red vs blue units auto-fight and a defeat reduces the unit count', a
   const defeatedEvents = await page.evaluate(() => (window as any).__defeatedEvents as unknown[]);
   expect(defeatedEvents.length).toBeGreaterThan(0);
 });
+
+test('game: sites render in the scene, the HUD is visible, and marching a red unit onto the neutral site captures it', async ({
+  page,
+}) => {
+  // Generous budget: closing the distance to the neutral site plus the
+  // sites' 3s captureTime normally finishes quickly, but three Playwright
+  // projects rendering WebGL concurrently can slow the sim's wall-clock
+  // progress substantially (see the combat test above for the same budget).
+  test.setTimeout(270_000);
+  await page.goto('/?game=1');
+  await waitForGameBoot(page);
+
+  await expect(page.getByTestId('game-hud')).toBeVisible();
+
+  // toBeVisible() alone is occlusion-blind — it would pass even if the HUD
+  // were painted underneath the demo's opaque left side panel (`.atlas-side`,
+  // z-index 20/27) with no stacking context between them, which is exactly
+  // what previously happened. Assert the HUD's rendered rect does not
+  // geometrically intersect the side panel's (when the panel is mounted at
+  // all — on narrow viewports it starts collapsed), and that its text
+  // actually names both factions, so a hidden or empty HUD fails this test.
+  const hudCheck = await page.evaluate(() => {
+    const hudEl = document.querySelector('[data-testid="game-hud"]');
+    const sideEl = document.querySelector('.atlas-side');
+    const hudRect = hudEl?.getBoundingClientRect();
+    const sideRect = sideEl?.getBoundingClientRect();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const factionIds = (window as any).__mapEngine.game.listFactions().map((f: any) => f.id as string);
+    return {
+      text: hudEl?.textContent ?? null,
+      factionIds,
+      hudRect: hudRect
+        ? { x: hudRect.x, y: hudRect.y, right: hudRect.right, bottom: hudRect.bottom }
+        : null,
+      sideRect: sideRect
+        ? { x: sideRect.x, y: sideRect.y, right: sideRect.right, bottom: sideRect.bottom }
+        : null,
+    };
+  });
+  expect(hudCheck.hudRect).not.toBeNull();
+  expect(hudCheck.factionIds.length).toBeGreaterThan(0);
+  for (const factionId of hudCheck.factionIds) {
+    expect(hudCheck.text ?? '').toContain(factionId);
+  }
+  if (hudCheck.sideRect) {
+    const hud = hudCheck.hudRect!;
+    const side = hudCheck.sideRect;
+    const intersects =
+      hud.x < side.right && side.x < hud.right && hud.y < side.bottom && side.y < hud.bottom;
+    expect(intersects).toBe(false);
+  }
+
+  // Every site the simulation knows about must have a corresponding scene
+  // object named `game:site:{id}` (createGameView's contract).
+  const sitesCheck = await page.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const me = (window as any).__mapEngine;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sites = me.game.listSites() as any[];
+    const missing = sites
+      .map((s) => s.id as string)
+      .filter((id) => !me.gameView.group.getObjectByName(`game:site:${id}`));
+    return { siteCount: sites.length, missing };
+  });
+  expect(sitesCheck.siteCount).toBeGreaterThan(0);
+  expect(sitesCheck.missing).toEqual([]);
+
+  // Command a red unit onto the neutral site's position — the default demo
+  // world is procedural, so `site:neutral` always exists (see gameSetup.ts).
+  const setup = await page.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const me = (window as any).__mapEngine;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const neutral = me.game.getSite('site:neutral') as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const redUnit = (me.game.listUnits() as any[]).find((u) => u.factionId === 'red');
+    if (!neutral || !redUnit) return null;
+    const started = me.game.moveUnitTo(redUnit.id, {
+      x: neutral.position.x,
+      y: neutral.position.z,
+    });
+    return { started: started as boolean };
+  });
+  expect(setup).not.toBeNull();
+  expect(setup!.started).toBe(true);
+
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const site = (window as any).__mapEngine.game.getSite('site:neutral') as any;
+          return site ? site.ownerFactionId : null;
+        }),
+      { timeout: 240_000 },
+    )
+    .toBe('red');
+});
+
+test('game: with ?ai=1, the blue AI opponent trains a unit and commands it', async ({ page }) => {
+  test.setTimeout(150_000);
+  await page.goto('/?game=1&ai=1');
+  await waitForGameBoot(page);
+
+  const startBlueCount = await page.evaluate(
+    () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__mapEngine.game.listUnits().filter((u: any) => u.factionId === 'blue')
+        .length,
+  );
+
+  // Blue starts with 60 resources and training costs 50, so this fires on
+  // the AI's first decision pass (~1 sim-second) — poll a single snapshot
+  // until BOTH hold together: blue has grown past its starting count AND at
+  // least one blue unit is actively moving/fighting, proving the AI both
+  // trained and issued a command (not just one or the other, on different
+  // frames).
+  await expect
+    .poll(
+      async () =>
+        page.evaluate((start) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const units = (window as any).__mapEngine.game.listUnits() as any[];
+          const blues = units.filter((u) => u.factionId === 'blue');
+          const grew = blues.length > start;
+          const activeBlue = blues.some((u) => u.state === 'moving' || u.state === 'fighting');
+          return grew && activeBlue;
+        }, startBlueCount),
+      { timeout: 120_000 },
+    )
+    .toBe(true);
+
+  // Also confirm the AI controller was actually constructed and exposed.
+  const aiCount = await page.evaluate(() => (window as any).__mapEngine.gameAis?.length ?? 0);
+  expect(aiCount).toBe(1);
+});
